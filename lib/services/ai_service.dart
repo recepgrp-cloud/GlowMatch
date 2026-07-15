@@ -1,39 +1,130 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
+
+import 'product_matcher.dart';
+
 class AIService {
-  Future<Map<String, dynamic>> analyzeFace() async {
-    // Şimdilik sahte analiz yapıyoruz.
-    await Future.delayed(const Duration(seconds: 3));
+  static final Uri _functionUrl = Uri.parse(
+    'https://us-central1-glowmatch-560b1.cloudfunctions.net/analyzeFace',
+  );
 
-    return {
-      "skinTone": "Açık Buğday",
-      "undertone": "Sıcak",
-      "skinType": "Karma",
-      "faceShape": "Oval",
-      "eyeColor": "Ela",
-      "hairColor": "Koyu Kahverengi",
+  final ProductMatcher _productMatcher = ProductMatcher();
 
-      "foundation": {
-        "brand": "Maybelline",
-        "product": "Fit Me Matte",
-        "code": "220 Natural Beige",
-      },
+  Future<Map<String, dynamic>> analyzeFace(XFile image) async {
+    try {
+      final Uint8List imageBytes = await image.readAsBytes();
 
-      "concealer": {
-        "brand": "Maybelline",
-        "product": "Fit Me Concealer",
-        "code": "20 Sand",
-      },
+      if (imageBytes.isEmpty) {
+        throw const AIServiceException(
+          'Seçilen fotoğraf boş görünüyor.',
+        );
+      }
 
-      "blush": {
-        "brand": "Rare Beauty",
-        "product": "Soft Pinch",
-        "code": "Joy",
-      },
+      final String mimeType =
+          lookupMimeType(
+            image.name,
+            headerBytes: imageBytes.take(32).toList(),
+          ) ??
+          'image/jpeg';
 
-      "lipstick": {
-        "brand": "MAC",
-        "product": "Matte Lipstick",
-        "code": "Velvet Teddy",
-      },
-    };
+      final String base64Image = base64Encode(imageBytes);
+
+      final http.Response response = await http
+          .post(
+            _functionUrl,
+            headers: const {
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'image': base64Image,
+              'mimeType': mimeType,
+            }),
+          )
+          .timeout(const Duration(seconds: 120));
+
+      Map<String, dynamic> responseBody;
+
+      try {
+        final dynamic decoded = jsonDecode(response.body);
+
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException();
+        }
+
+        responseBody = decoded;
+      } catch (_) {
+        throw AIServiceException(
+          'Sunucudan okunamayan bir yanıt geldi. '
+          'HTTP kodu: ${response.statusCode}',
+        );
+      }
+
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300) {
+        final String message =
+            responseBody['details']?.toString() ??
+            responseBody['error']?.toString() ??
+            'Fotoğraf analizi başarısız oldu.';
+
+        throw AIServiceException(message);
+      }
+
+      _validateResult(responseBody);
+
+      return _productMatcher.enrichResult(responseBody);
+    } on AIServiceException {
+      rethrow;
+    } on http.ClientException catch (error) {
+      throw AIServiceException(
+        'Sunucu bağlantısı kurulamadı: ${error.message}',
+      );
+    } catch (error) {
+      throw AIServiceException(
+        'Analiz sırasında beklenmeyen hata oluştu: $error',
+      );
+    }
   }
+
+  void _validateResult(Map<String, dynamic> result) {
+    const requiredFields = [
+      'skinTone',
+      'undertone',
+      'skinType',
+      'faceShape',
+      'eyeColor',
+      'hairColor',
+      'foundationBrand',
+      'foundationCode',
+      'concealerBrand',
+      'concealerCode',
+      'blushBrand',
+      'blushCode',
+      'lipstickBrand',
+      'lipstickCode',
+      'hairStyle',
+      'hairColorSuggestion',
+      'disclaimer',
+    ];
+
+    for (final field in requiredFields) {
+      if (!result.containsKey(field)) {
+        throw AIServiceException(
+          'Analiz sonucunda eksik alan bulundu: $field',
+        );
+      }
+    }
+  }
+}
+
+class AIServiceException implements Exception {
+  final String message;
+
+  const AIServiceException(this.message);
+
+  @override
+  String toString() => message;
 }

@@ -234,6 +234,63 @@ ${_value('disclaimer')}
     );
   }
 
+  Widget _buildAnalysisDetailsSection() {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        leading: const Icon(
+          Icons.psychology_alt_outlined,
+          color: Colors.deepPurple,
+        ),
+        title: const Text(
+          'AI Analiz Detayları',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: const Text(
+          'Cilt, yüz, göz ve saç analizini görmek için dokun',
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          _buildInfoCard(
+            icon: Icons.face,
+            title: 'Cilt Tonu',
+            value: _value('skinTone'),
+          ),
+          _buildInfoCard(
+            icon: Icons.wb_sunny_outlined,
+            title: 'Alt Ton',
+            value: _value('undertone'),
+          ),
+          _buildInfoCard(
+            icon: Icons.water_drop_outlined,
+            title: 'Cilt Tipi',
+            value: _value('skinType'),
+          ),
+          _buildInfoCard(
+            icon: Icons.crop_square,
+            title: 'Yüz Şekli',
+            value: _value('faceShape'),
+          ),
+          _buildInfoCard(
+            icon: Icons.remove_red_eye_outlined,
+            title: 'Göz Rengi',
+            value: _value('eyeColor'),
+          ),
+          _buildInfoCard(
+            icon: Icons.content_cut,
+            title: 'Mevcut Saç Rengi',
+            value: _value('hairColor'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRecommendationSection({
     required String title,
     required IconData icon,
@@ -290,46 +347,428 @@ ${_value('disclaimer')}
     );
   }
 
-  Widget _buildRecommendationItem({
-    required int index,
-    required Map<String, dynamic> recommendation,
-  }) {
-    final label = switch (index) {
-      0 => '🥇 En Uygun',
-      1 => '🥈 Alternatif 1',
-      _ => '🥉 Alternatif 2',
-    };
 
-    final brand = recommendation['brand']?.toString() ?? 'Belirsiz';
-    final product =
-        recommendation['product']?.toString() ?? '';
-    final shade = recommendation['shade']?.toString() ?? 'Belirsiz';
+  Widget _buildAffordableFoundationSection() {
+    final value = result['affordableFoundationAlternatives'];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SelectableText(
-          label,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.deepPurple,
-          ),
+    if (value is! List || value.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final alternatives = value
+        .whereType<Map>()
+        .map(
+          (item) => Map<String, dynamic>.from(item),
+        )
+        .toList();
+
+    if (alternatives.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.savings_outlined,
+                  color: Colors.green,
+                  size: 28,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: SelectableText(
+                    'Aynı Tonda Daha Uygun Alternatifler',
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ana fondöten önerisine yakın, 300 TL ile 1000 TL arasındaki seçenekler.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 14),
+            for (int index = 0;
+                index < alternatives.length;
+                index++) ...[
+              _buildRecommendationItem(
+                index: index,
+                recommendation: alternatives[index],
+              ),
+              if (index != alternatives.length - 1)
+                const Divider(height: 26),
+            ],
+          ],
         ),
-        const SizedBox(height: 7),
-        SelectableText(
-          product.isEmpty ? brand : '$brand — $product',
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 5),
-        SelectableText('Kod / Renk: $shade'),
-      ],
+      ),
     );
   }
 
+  String _recommendationValue(
+  Map<String, dynamic> recommendation,
+  String key, {
+  String fallback = '',
+}) {
+  final value = recommendation[key];
+
+  if (value == null || value.toString().trim().isEmpty) {
+    return fallback;
+  }
+
+  return value.toString().trim();
+}
+
+bool _recommendationBool(
+  Map<String, dynamic> recommendation,
+  String key,
+) {
+  final value = recommendation[key];
+
+  if (value is bool) {
+    return value;
+  }
+
+  return value.toString().toLowerCase() == 'true';
+}
+
+String _priceText(Map<String, dynamic> recommendation) {
+  final value = recommendation['averagePrice'];
+
+  if (value == null) {
+    return 'Fiyat bilgisi yok';
+  }
+
+  final price = value is num
+      ? value.toInt()
+      : int.tryParse(value.toString());
+
+  if (price == null || price <= 0) {
+    return 'Fiyat bilgisi yok';
+  }
+
+  return 'Yaklaşık $price TL';
+}
+
+String _priceSegmentText(
+  Map<String, dynamic> recommendation,
+  int index,
+) {
+  final value = recommendation['priceSegment']
+      ?.toString()
+      .trim()
+      .toLowerCase();
+
+  if (value != null) {
+    if (value.contains('premium')) {
+      return 'Premium';
+    }
+
+    if (value.contains('ekonomik') || value.contains('budget')) {
+      return 'Ekonomik';
+    }
+
+    if (value.contains('orta') || value.contains('mid')) {
+      return 'Orta Segment';
+    }
+  }
+
+  return switch (index) {
+    0 => 'Ana Öneri',
+    1 => 'Alternatif',
+    _ => 'Diğer Alternatif',
+  };
+}
+
+Color _priceSegmentColor(String segment) {
+  switch (segment) {
+    case 'Premium':
+      return Colors.deepPurple;
+
+    case 'Ekonomik':
+      return Colors.green;
+
+    case 'Orta Segment':
+      return Colors.orange;
+
+    default:
+      return Colors.pink;
+  }
+}
+
+Widget _buildFeatureChip({
+  required IconData icon,
+  required String label,
+}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(
+      horizontal: 10,
+      vertical: 7,
+    ),
+    decoration: BoxDecoration(
+      color: Colors.grey.shade100,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: Colors.grey.shade300,
+      ),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: Colors.deepPurple,
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildRecommendationItem({
+  required int index,
+  required Map<String, dynamic> recommendation,
+}) {
+  final medal = switch (index) {
+    0 => '🥇',
+    1 => '🥈',
+    _ => '🥉',
+  };
+
+  final brand = _recommendationValue(
+    recommendation,
+    'brand',
+    fallback: 'Marka belirtilmedi',
+  );
+
+  final product = _recommendationValue(
+    recommendation,
+    'product',
+  );
+
+  final shade = _recommendationValue(
+    recommendation,
+    'shade',
+    fallback: 'Renk belirtilmedi',
+  );
+
+  final finish = _recommendationValue(
+    recommendation,
+    'finish',
+  );
+
+  final coverage = _recommendationValue(
+    recommendation,
+    'coverage',
+  );
+
+  final shadeFamily = _recommendationValue(
+    recommendation,
+    'shadeFamily',
+  );
+
+  final vegan = _recommendationBool(
+    recommendation,
+    'vegan',
+  );
+
+  final crueltyFree = _recommendationBool(
+    recommendation,
+    'crueltyFree',
+  );
+
+  final skinTypesValue = recommendation['skinTypes'];
+
+  final skinTypes = skinTypesValue is List
+      ? skinTypesValue
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .join(', ')
+      : '';
+
+  final segment = _priceSegmentText(
+    recommendation,
+    index,
+  );
+
+  final segmentColor = _priceSegmentColor(segment);
+
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(15),
+    decoration: BoxDecoration(
+      color: segmentColor.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: segmentColor.withValues(alpha: 0.25),
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: SelectableText(
+                '$medal $segment',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: segmentColor,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: segmentColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                _priceText(recommendation),
+                style: TextStyle(
+                  color: segmentColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 13),
+
+        SelectableText(
+          brand,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+
+        if (product.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          SelectableText(
+            product,
+            style: TextStyle(
+              fontSize: 15,
+              color: Colors.grey.shade800,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 11),
+
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.colorize,
+                size: 20,
+                color: Colors.pink,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SelectableText(
+                  'Kod / Renk: $shade',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        if (shadeFamily.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SelectableText(
+            'Renk ailesi: $shadeFamily',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 13,
+            ),
+          ),
+        ],
+
+        if (finish.isNotEmpty ||
+            coverage.isNotEmpty ||
+            skinTypes.isNotEmpty ||
+            vegan ||
+            crueltyFree) ...[
+          const SizedBox(height: 13),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (finish.isNotEmpty)
+                _buildFeatureChip(
+                  icon: Icons.auto_awesome,
+                  label: 'Bitiş: $finish',
+                ),
+
+              if (coverage.isNotEmpty)
+                _buildFeatureChip(
+                  icon: Icons.layers_outlined,
+                  label: 'Kapatıcılık: $coverage',
+                ),
+
+              if (skinTypes.isNotEmpty)
+                _buildFeatureChip(
+                  icon: Icons.water_drop_outlined,
+                  label: skinTypes,
+                ),
+
+              if (vegan)
+                _buildFeatureChip(
+                  icon: Icons.eco_outlined,
+                  label: 'Vegan',
+                ),
+
+              if (crueltyFree)
+                _buildFeatureChip(
+                  icon: Icons.pets_outlined,
+                  label: 'Cruelty Free',
+                ),
+            ],
+          ),
+        ],
+      ],
+    ),
+  );
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -358,39 +797,6 @@ ${_value('disclaimer')}
             ),
             const SizedBox(height: 25),
 
-            _buildInfoCard(
-              icon: Icons.face,
-              title: 'Cilt Tonu',
-              value: _value('skinTone'),
-            ),
-            _buildInfoCard(
-              icon: Icons.wb_sunny_outlined,
-              title: 'Alt Ton',
-              value: _value('undertone'),
-            ),
-            _buildInfoCard(
-              icon: Icons.water_drop_outlined,
-              title: 'Cilt Tipi',
-              value: _value('skinType'),
-            ),
-            _buildInfoCard(
-              icon: Icons.crop_square,
-              title: 'Yüz Şekli',
-              value: _value('faceShape'),
-            ),
-            _buildInfoCard(
-              icon: Icons.remove_red_eye_outlined,
-              title: 'Göz Rengi',
-              value: _value('eyeColor'),
-            ),
-            _buildInfoCard(
-              icon: Icons.content_cut,
-              title: 'Mevcut Saç Rengi',
-              value: _value('hairColor'),
-            ),
-
-            const SizedBox(height: 16),
-
             const SelectableText(
               'Önerilen Makyaj Ürünleri',
               style: TextStyle(
@@ -408,6 +814,8 @@ ${_value('disclaimer')}
               fallbackBrandKey: 'foundationBrand',
               fallbackCodeKey: 'foundationCode',
             ),
+
+            _buildAffordableFoundationSection(),
 
             _buildRecommendationSection(
               title: 'Kapatıcı',
@@ -456,6 +864,10 @@ ${_value('disclaimer')}
               title: 'Saç Rengi Önerisi',
               value: _value('hairColorSuggestion'),
             ),
+
+            const SizedBox(height: 8),
+
+            _buildAnalysisDetailsSection(),
 
             const SizedBox(height: 15),
 
@@ -513,4 +925,4 @@ ${_value('disclaimer')}
       ),
     );
   }
-}
+} 

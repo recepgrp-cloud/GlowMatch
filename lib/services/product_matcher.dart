@@ -2,88 +2,551 @@ import '../data/product_catalog.dart';
 
 class ProductMatcher {
   Map<String, dynamic> enrichResult(Map<String, dynamic> result) {
-    // Önce fondöten seçilir.
-    // Kapatıcı seçimi ana fondötene göre yapılacaktır.
-    final foundations = _findTopProducts(
-      category: 'foundation',
-      result: result,
-      preferPriceDiversity: true,
+    final detectedSkinTone = _detectSkinTone(
+      result['skinTone']?.toString() ?? '',
     );
 
-    final MakeupProduct? selectedFoundation =
+    final detectedUndertone = _detectUndertone(
+      result['undertone']?.toString() ?? '',
+    );
+
+    final detectedSkinType =
+        result['skinType']?.toString() ?? '';
+
+    final shadeFamily = _buildShadeFamily(
+      skinTone: detectedSkinTone,
+      undertone: detectedUndertone,
+    );
+
+    final foundations = _findShadeFamilyProducts(
+      category: 'foundation',
+      shadeFamily: shadeFamily,
+      skinTone: detectedSkinTone,
+      undertone: detectedUndertone,
+      skinType: detectedSkinType,
+    );
+
+    final selectedFoundation =
         foundations.isNotEmpty ? foundations.first : null;
 
-    final concealers = _findTopProducts(
-      category: 'concealer',
-      result: result,
-      referenceFoundation: selectedFoundation,
-      preferPriceDiversity: true,
+    final affordableFoundations = selectedFoundation != null
+        ? _findAffordableAlternatives(
+            referenceProduct: selectedFoundation,
+            category: 'foundation',
+            skinTone: detectedSkinTone,
+            undertone: detectedUndertone,
+            skinType: detectedSkinType,
+          )
+        : <MakeupProduct>[];
+
+    final concealers = _findConcealers(
+      skinTone: detectedSkinTone,
+      undertone: detectedUndertone,
+      skinType: detectedSkinType,
+      foundation: selectedFoundation,
     );
 
-    final blushes = _findTopProducts(
+    final blushes = _findGeneralProducts(
       category: 'blush',
       result: result,
-      preferPriceDiversity: true,
+      detectedSkinTone: detectedSkinTone,
+      detectedUndertone: detectedUndertone,
+      detectedSkinType: detectedSkinType,
     );
 
-    final lipsticks = _findTopProducts(
+    final lipsticks = _findGeneralProducts(
       category: 'lipstick',
       result: result,
-      preferPriceDiversity: true,
+      detectedSkinTone: detectedSkinTone,
+      detectedUndertone: detectedUndertone,
+      detectedSkinType: detectedSkinType,
     );
 
     return {
       ...result,
+      'shadeFamily': shadeFamily,
+      'shadeFamilyLabel': _shadeFamilyLabel(shadeFamily),
+
       if (foundations.isNotEmpty) ...{
         'foundationBrand':
             '${foundations.first.brand} — ${foundations.first.product}',
         'foundationCode': foundations.first.shade,
-        'foundationRecommendations':
-            foundations.map(_productToMap).toList(),
+        'foundationRecommendations': foundations
+            .map(
+              (product) => _productToMap(
+                product,
+                skinTone: detectedSkinTone,
+                undertone: detectedUndertone,
+                skinType: detectedSkinType,
+              ),
+            )
+            .toList(),
+        'affordableFoundationAlternatives': affordableFoundations
+            .map(
+              (product) => _productToMap(
+                product,
+                skinTone: detectedSkinTone,
+                undertone: detectedUndertone,
+                skinType: detectedSkinType,
+              ),
+            )
+            .toList(),
       },
+
       if (concealers.isNotEmpty) ...{
         'concealerBrand':
             '${concealers.first.brand} — ${concealers.first.product}',
         'concealerCode': concealers.first.shade,
-        'concealerRecommendations':
-            concealers.map(_productToMap).toList(),
+        'concealerRecommendations': concealers
+            .map(
+              (product) => _productToMap(
+                product,
+                skinTone: detectedSkinTone,
+                undertone: detectedUndertone,
+                skinType: detectedSkinType,
+              ),
+            )
+            .toList(),
       },
+
       if (blushes.isNotEmpty) ...{
         'blushBrand':
             '${blushes.first.brand} — ${blushes.first.product}',
         'blushCode': blushes.first.shade,
-        'blushRecommendations':
-            blushes.map(_productToMap).toList(),
+        'blushRecommendations': blushes
+            .map(
+              (product) => _productToMap(
+                product,
+                skinTone: detectedSkinTone,
+                undertone: detectedUndertone,
+                skinType: detectedSkinType,
+              ),
+            )
+            .toList(),
       },
+
       if (lipsticks.isNotEmpty) ...{
         'lipstickBrand':
             '${lipsticks.first.brand} — ${lipsticks.first.product}',
         'lipstickCode': lipsticks.first.shade,
-        'lipstickRecommendations':
-            lipsticks.map(_productToMap).toList(),
+        'lipstickRecommendations': lipsticks
+            .map(
+              (product) => _productToMap(
+                product,
+                skinTone: detectedSkinTone,
+                undertone: detectedUndertone,
+                skinType: detectedSkinType,
+              ),
+            )
+            .toList(),
       },
     };
   }
 
-  Map<String, dynamic> _productToMap(MakeupProduct product) {
+  Map<String, dynamic> _productToMap(
+    MakeupProduct product, {
+    required String skinTone,
+    required String undertone,
+    required String skinType,
+  }) {
+    final match = _calculateProductMatch(
+      product: product,
+      skinTone: skinTone,
+      undertone: undertone,
+      skinType: skinType,
+    );
+
     return {
       'brand': product.brand,
       'product': product.product,
       'shade': product.shade,
+      'shadeFamily': product.shadeFamily,
       'priceLevel': product.priceLevel,
+      'priceSegment': product.priceSegmentLabel,
       'averagePrice': product.averagePrice,
       'finish': product.finish,
+      'coverage': product.coverage,
+      'skinTypes': product.skinTypes,
       'vegan': product.vegan,
       'crueltyFree': product.crueltyFree,
+      'matchScore': match.score,
+      'matchReason': match.reason,
     };
   }
 
-  List<MakeupProduct> _findTopProducts({
+  _ProductMatch _calculateProductMatch({
+    required MakeupProduct product,
+    required String skinTone,
+    required String undertone,
+    required String skinType,
+  }) {
+    int score = 15;
+    final reasons = <String>[];
+
+    final normalizedSkinType = _normalize(skinType);
+    final normalizedFinish = _normalize(product.finish);
+
+    if (product.skinTones.contains(skinTone)) {
+      score += 30;
+      reasons.add('cilt tonunla uyumlu');
+    }
+
+    if (product.undertones.contains(undertone)) {
+      score += 25;
+      reasons.add('alt tonunla uyumlu');
+    } else if (product.undertones.contains('neutral')) {
+      score += 10;
+      reasons.add('nötr alt tonuyla uyum sağlayabilir');
+    }
+
+    if (normalizedSkinType.isNotEmpty) {
+      final skinTypeMatched = product.skinTypes.any((type) {
+        final normalizedProductType = _normalize(type);
+
+        return normalizedProductType ==
+                normalizedSkinType ||
+            normalizedSkinType.contains(
+              normalizedProductType,
+            ) ||
+            normalizedProductType.contains(
+              normalizedSkinType,
+            );
+      });
+
+      if (skinTypeMatched) {
+        score += 20;
+        reasons.add('cilt tipine uygun');
+      }
+
+      if (normalizedSkinType.contains('yagli') ||
+          normalizedSkinType.contains('karma')) {
+        if (normalizedFinish.contains('mat')) {
+          score += 5;
+          reasons.add(
+            'mat bitişi parlama kontrolüne yardımcı olur',
+          );
+        }
+      }
+
+      if (normalizedSkinType.contains('kuru')) {
+        if (normalizedFinish.contains('dogal') ||
+            normalizedFinish.contains('isilti') ||
+            normalizedFinish.contains('nemli') ||
+            normalizedFinish.contains('saten')) {
+          score += 5;
+          reasons.add(
+            'bitişi kuru cilt için daha uygundur',
+          );
+        }
+
+        if (normalizedFinish.contains('mat') &&
+            !normalizedFinish.contains('dogal')) {
+          score -= 5;
+        }
+      }
+    }
+
+    final finalScore = score.clamp(0, 100).toInt();
+
+    return _ProductMatch(
+      score: finalScore,
+      reason: reasons.isEmpty
+          ? 'genel ürün özelliklerine göre önerildi'
+          : reasons.join(', '),
+    );
+  }
+
+  int _selectionScore({
+    required MakeupProduct product,
+    required String skinTone,
+    required String undertone,
+    required String skinType,
+  }) {
+    return _calculateProductMatch(
+      product: product,
+      skinTone: skinTone,
+      undertone: undertone,
+      skinType: skinType,
+    ).score;
+  }
+
+  List<MakeupProduct> _findShadeFamilyProducts({
+    required String category,
+    required String shadeFamily,
+    required String skinTone,
+    required String undertone,
+    required String skinType,
+  }) {
+    final categoryProducts = ProductCatalog.products
+        .where((product) => product.category == category)
+        .toList();
+
+    if (categoryProducts.isEmpty) {
+      return [];
+    }
+
+    var matchingProducts = categoryProducts
+        .where(
+          (product) => product.shadeFamily == shadeFamily,
+        )
+        .toList();
+
+    if (matchingProducts.isEmpty) {
+      matchingProducts = categoryProducts.where((product) {
+        return product.skinTones.contains(skinTone) &&
+            product.undertones.contains(undertone);
+      }).toList();
+    }
+
+    if (matchingProducts.isEmpty) {
+      matchingProducts = categoryProducts.where((product) {
+        return product.skinTones.contains(skinTone);
+      }).toList();
+    }
+
+    if (matchingProducts.isEmpty) {
+      matchingProducts = categoryProducts;
+    }
+
+    matchingProducts.sort((a, b) {
+      final aScore = _selectionScore(
+        product: a,
+        skinTone: skinTone,
+        undertone: undertone,
+        skinType: skinType,
+      );
+
+      final bScore = _selectionScore(
+        product: b,
+        skinTone: skinTone,
+        undertone: undertone,
+        skinType: skinType,
+      );
+
+      final scoreComparison = bScore.compareTo(aScore);
+
+      if (scoreComparison != 0) {
+        return scoreComparison;
+      }
+
+      return a.averagePrice.compareTo(b.averagePrice);
+    });
+
+    return _selectByPriceSegment(matchingProducts);
+  }
+
+  List<MakeupProduct> _selectByPriceSegment(
+    List<MakeupProduct> products,
+  ) {
+    MakeupProduct? premium;
+    MakeupProduct? midRange;
+    MakeupProduct? budget;
+
+    for (final product in products) {
+      switch (product.priceSegment) {
+        case PriceSegment.premium:
+          premium ??= product;
+          break;
+
+        case PriceSegment.midRange:
+          midRange ??= product;
+          break;
+
+        case PriceSegment.budget:
+          budget ??= product;
+          break;
+      }
+    }
+
+    final selected = <MakeupProduct>[];
+
+    if (midRange != null) {
+      selected.add(midRange);
+    }
+
+    if (premium != null) {
+      selected.add(premium);
+    }
+
+    if (budget != null) {
+      selected.add(budget);
+    }
+
+    for (final product in products) {
+      if (selected.length >= 3) {
+        break;
+      }
+
+      final alreadySelected = selected.any(
+        (item) =>
+            item.brand == product.brand &&
+            item.product == product.product &&
+            item.shade == product.shade,
+      );
+
+      if (!alreadySelected) {
+        selected.add(product);
+      }
+    }
+
+    return selected.take(3).toList();
+  }
+
+  List<MakeupProduct> _findConcealers({
+    required String skinTone,
+    required String undertone,
+    required String skinType,
+    MakeupProduct? foundation,
+  }) {
+    final products = ProductCatalog.products
+        .where(
+          (product) => product.category == 'concealer',
+        )
+        .toList();
+
+    if (products.isEmpty) {
+      return [];
+    }
+
+    final scoredProducts = products.map((product) {
+      int score = _selectionScore(
+        product: product,
+        skinTone: skinTone,
+        undertone: undertone,
+        skinType: skinType,
+      );
+
+      if (foundation != null) {
+        if (product.shadeFamily ==
+            foundation.shadeFamily) {
+          score += 25;
+        }
+
+        if (product.brand == foundation.brand) {
+          score += 5;
+        }
+
+        score += _foundationConcealerRelationScore(
+          foundation: foundation,
+          concealer: product,
+        );
+      }
+
+      return _ScoredProduct(
+        product: product,
+        score: score,
+      );
+    }).toList();
+
+    scoredProducts.sort((a, b) {
+      final scoreComparison =
+          b.score.compareTo(a.score);
+
+      if (scoreComparison != 0) {
+        return scoreComparison;
+      }
+
+      return a.product.averagePrice.compareTo(
+        b.product.averagePrice,
+      );
+    });
+
+    return _selectDiverseScoredProducts(
+      scoredProducts: scoredProducts,
+      limit: 3,
+    );
+  }
+
+  int _foundationConcealerRelationScore({
+    required MakeupProduct foundation,
+    required MakeupProduct concealer,
+  }) {
+    final foundationShade =
+        _normalize(foundation.shade);
+
+    final concealerShade =
+        _normalize(concealer.shade);
+
+    int score = 0;
+
+    if (foundation.shadeFamily.isNotEmpty &&
+        foundation.shadeFamily ==
+            concealer.shadeFamily) {
+      score += 20;
+    }
+
+    if (foundationShade.contains('115') ||
+        foundationShade.contains('ivory') ||
+        foundationShade.contains('nc15')) {
+      if (concealerShade.contains('light') ||
+          concealerShade.contains('ivory') ||
+          concealerShade.contains('fair') ||
+          concealerShade.contains('10')) {
+        score += 15;
+      }
+    }
+
+    if (foundationShade.contains('125') ||
+        foundationShade.contains('fiji') ||
+        foundationShade.contains('nc20') ||
+        foundationShade.contains('2n')) {
+      if (concealerShade.contains('sand') ||
+          concealerShade.contains('vanilla') ||
+          concealerShade.contains('20') ||
+          concealerShade.contains('light medium')) {
+        score += 18;
+      }
+
+      if (concealerShade.contains('honey') ||
+          concealerShade.contains('deep')) {
+        score -= 10;
+      }
+    }
+
+    if (foundationShade.contains('220') ||
+        foundationShade.contains('222') ||
+        foundationShade.contains('punjab') ||
+        foundationShade.contains('nc30')) {
+      if (concealerShade.contains('medium') ||
+          concealerShade.contains('honey') ||
+          concealerShade.contains('25') ||
+          concealerShade.contains('30')) {
+        score += 16;
+      }
+
+      if (concealerShade.contains('fair') ||
+          concealerShade.contains('porcelain')) {
+        score -= 8;
+      }
+    }
+
+    if (foundation.skinTones.contains('mediumDeep')) {
+      if (concealerShade.contains('caramel') ||
+          concealerShade.contains('deep') ||
+          concealerShade.contains('35') ||
+          concealerShade.contains('40')) {
+        score += 16;
+      }
+    }
+
+    if (foundation.skinTones.contains('deep')) {
+      if (concealerShade.contains('cafe') ||
+          concealerShade.contains('deep') ||
+          concealerShade.contains('40') ||
+          concealerShade.contains('50')) {
+        score += 18;
+      }
+    }
+
+    return score;
+  }
+
+  List<MakeupProduct> _findGeneralProducts({
     required String category,
     required Map<String, dynamic> result,
-    MakeupProduct? referenceFoundation,
-    bool preferPriceDiversity = false,
-    int limit = 3,
+    required String detectedSkinTone,
+    required String detectedUndertone,
+    required String detectedSkinType,
   }) {
     final products = ProductCatalog.products
         .where((product) => product.category == category)
@@ -97,35 +560,20 @@ class ProductMatcher {
       [
         result['skinTone'],
         result['undertone'],
-        result['foundationBrand'],
-        result['foundationCode'],
-        result['concealerBrand'],
-        result['concealerCode'],
-        result['blushBrand'],
-        result['blushCode'],
-        result['lipstickBrand'],
-        result['lipstickCode'],
+        result['eyeColor'],
+        result['hairColor'],
+        result['${category}Brand'],
+        result['${category}Code'],
       ].whereType<Object>().join(' '),
     );
 
-    final detectedUndertone = _detectUndertone(
-      result['undertone']?.toString() ?? '',
-    );
-
-    final detectedSkinTone = _detectSkinTone(
-      result['skinTone']?.toString() ?? '',
-    );
-
     final scoredProducts = products.map((product) {
-      int score = 0;
-
-      if (product.undertones.contains(detectedUndertone)) {
-        score += 10;
-      }
-
-      if (product.skinTones.contains(detectedSkinTone)) {
-        score += 8;
-      }
+      int score = _selectionScore(
+        product: product,
+        skinTone: detectedSkinTone,
+        undertone: detectedUndertone,
+        skinType: detectedSkinType,
+      );
 
       for (final tag in product.colorTags) {
         final normalizedTag = _normalize(tag);
@@ -136,23 +584,6 @@ class ProductMatcher {
         }
       }
 
-      if (category == 'foundation') {
-        score += _foundationShadeScore(
-          product: product,
-          detectedSkinTone: detectedSkinTone,
-          detectedUndertone: detectedUndertone,
-        );
-      }
-
-      if (category == 'concealer') {
-        score += _concealerShadeScore(
-          product: product,
-          detectedSkinTone: detectedSkinTone,
-          detectedUndertone: detectedUndertone,
-          referenceFoundation: referenceFoundation,
-        );
-      }
-
       return _ScoredProduct(
         product: product,
         score: score,
@@ -160,568 +591,200 @@ class ProductMatcher {
     }).toList();
 
     scoredProducts.sort((a, b) {
-      final scoreComparison = b.score.compareTo(a.score);
+      final scoreComparison =
+          b.score.compareTo(a.score);
 
       if (scoreComparison != 0) {
         return scoreComparison;
       }
 
-      return a.product.shade.compareTo(b.product.shade);
+      return a.product.priceLevel.compareTo(
+        b.product.priceLevel,
+      );
     });
 
-    return _takeDiverseProducts(
+    return _selectDiverseScoredProducts(
       scoredProducts: scoredProducts,
-      limit: limit,
-      preferPriceDiversity: preferPriceDiversity,
+      limit: 3,
     );
   }
 
-  int _foundationShadeScore({
-    required MakeupProduct product,
-    required String detectedSkinTone,
-    required String detectedUndertone,
-  }) {
-    final productDepth = _foundationDepth(product);
-    final targetDepth = _skinToneDepth(detectedSkinTone);
-
-    int score = 0;
-
-    if (productDepth != null) {
-      final distance = (productDepth - targetDepth).abs();
-
-      if (distance == 0) {
-        score += 24;
-      } else if (distance == 1) {
-        score += 10;
-      } else if (distance == 2) {
-        score -= 15;
-      } else {
-        score -= 30;
-      }
-
-      // Fondötenin hedef tenden daha koyu olması biraz daha risklidir.
-      if (productDepth > targetDepth) {
-        final darkerDistance = productDepth - targetDepth;
-
-        if (darkerDistance == 1) {
-          score -= 4;
-        } else if (darkerDistance >= 2) {
-          score -= 12;
-        }
-      }
-    }
-
-    if (detectedUndertone == 'warm') {
-      if (product.undertones.contains('warm')) {
-        score += 7;
-      }
-
-      if (product.undertones.contains('cool') &&
-          !product.undertones.contains('neutral')) {
-        score -= 7;
-      }
-    }
-
-    if (detectedUndertone == 'cool') {
-      if (product.undertones.contains('cool')) {
-        score += 7;
-      }
-
-      if (product.undertones.contains('warm') &&
-          !product.undertones.contains('neutral')) {
-        score -= 7;
-      }
-    }
-
-    if (detectedUndertone == 'neutral') {
-      if (product.undertones.contains('neutral')) {
-        score += 7;
-      }
-    }
-
-    return score;
-  }
-
-  int _concealerShadeScore({
-    required MakeupProduct product,
-    required String detectedSkinTone,
-    required String detectedUndertone,
-    MakeupProduct? referenceFoundation,
-  }) {
-    final shade = _normalize(product.shade);
-
-    int score = 0;
-
-    if (detectedSkinTone == 'light') {
-      if (shade.contains('10 light')) score += 15;
-      if (shade.contains('15 fair')) score += 13;
-      if (shade.contains('20 sand')) score += 9;
-      if (shade.contains('n1')) score += 11;
-      if (shade.contains('w2')) score += 8;
-
-      if (shade.contains('25 medium') ||
-          shade.contains('30 honey') ||
-          shade.contains('n5')) {
-        score -= 14;
-      }
-    }
-
-    if (detectedSkinTone == 'lightMedium') {
-      if (shade.contains('20 sand')) score += 18;
-      if (shade.contains('10 light')) score += 12;
-      if (shade.contains('15 fair')) score += 10;
-      if (shade.contains('n3')) score += 14;
-      if (shade.contains('w2')) score += 12;
-      if (shade.contains('25 medium')) score += 5;
-
-      if (shade.contains('30 honey') ||
-          shade.contains('n5') ||
-          shade.contains('w7')) {
-        score -= 12;
-      }
-    }
-
-    if (detectedSkinTone == 'medium') {
-      if (shade.contains('25 medium')) score += 16;
-      if (shade.contains('20 sand')) score += 10;
-      if (shade.contains('30 honey')) score += 12;
-      if (shade.contains('w4')) score += 12;
-      if (shade.contains('n5')) score += 9;
-
-      if (shade.contains('10 light') ||
-          shade.contains('15 fair')) {
-        score -= 9;
-      }
-    }
-
-    if (detectedSkinTone == 'mediumDeep') {
-      if (shade.contains('35 deep')) score += 15;
-      if (shade.contains('40 caramel')) score += 14;
-      if (shade.contains('w7')) score += 12;
-      if (shade.contains('30 honey')) score += 9;
-
-      if (shade.contains('10 light') ||
-          shade.contains('15 fair') ||
-          shade.contains('20 sand')) {
-        score -= 12;
-      }
-    }
-
-    if (detectedSkinTone == 'deep') {
-      if (shade.contains('50 cafe')) score += 16;
-      if (shade.contains('40 caramel')) score += 14;
-      if (shade.contains('35 deep')) score += 10;
-
-      if (shade.contains('10 light') ||
-          shade.contains('15 fair') ||
-          shade.contains('20 sand')) {
-        score -= 15;
-      }
-    }
-
-    if (detectedUndertone == 'cool') {
-      if (product.undertones.contains('cool')) {
-        score += 5;
-      }
-
-      if (product.undertones.contains('warm') &&
-          !product.undertones.contains('neutral')) {
-        score -= 4;
-      }
-    }
-
-    if (detectedUndertone == 'warm') {
-      if (product.undertones.contains('warm')) {
-        score += 5;
-      }
-
-      if (product.undertones.contains('cool') &&
-          !product.undertones.contains('neutral')) {
-        score -= 4;
-      }
-    }
-
-    if (detectedUndertone == 'neutral' &&
-        product.undertones.contains('neutral')) {
-      score += 5;
-    }
-
-    if (referenceFoundation != null) {
-      score += _foundationConcealerRelationScore(
-        foundation: referenceFoundation,
-        concealer: product,
-      );
-    }
-
-    return score;
-  }
-
-  int _foundationConcealerRelationScore({
-    required MakeupProduct foundation,
-    required MakeupProduct concealer,
-  }) {
-    final foundationDepth = _foundationDepth(foundation);
-    final concealerDepth = _concealerDepth(concealer);
-
-    if (foundationDepth == null || concealerDepth == null) {
-      return 0;
-    }
-
-    final difference = concealerDepth - foundationDepth;
-
-    // Aynı derinlik
-    if (difference == 0) {
-      return 18;
-    }
-
-    // Bir ton açık, kapatıcı için genellikle en uygun seçenek
-    if (difference == -1) {
-      return 22;
-    }
-
-    // İki ton açık, aydınlatıcı alternatif
-    if (difference == -2) {
-      return 8;
-    }
-
-    // Fondötenden bir ton koyu
-    if (difference == 1) {
-      return -10;
-    }
-
-    // Fondötenden iki veya daha fazla ton koyu
-    if (difference >= 2) {
-      return -22;
-    }
-
-    // Fazla açık
-    if (difference <= -3) {
-      return -12;
-    }
-
-    return 0;
-  }
-
-  int _skinToneDepth(String skinTone) {
-    switch (skinTone) {
-      case 'light':
-        return 1;
-      case 'lightMedium':
-        return 2;
-      case 'medium':
-        return 3;
-      case 'mediumDeep':
-        return 4;
-      case 'deep':
-        return 5;
-      default:
-        return 2;
-    }
-  }
-
-  int? _foundationDepth(MakeupProduct product) {
-    final text = _normalize(
-      '${product.brand} ${product.product} ${product.shade}',
-    );
-
-    // Çok açık ve açık tonlar
-    if (_containsAny(text, [
-      'c1',
-      'n1',
-      'w1',
-      '101 pastelle',
-      '02 ivory',
-      '401',
-      '01 beige',
-      'soft ivory',
-      'nude ivory',
-      '002 porcelain beige',
-      '010 light beige',
-    ])) {
-      return 1;
-    }
-
-    // Açık-orta tonlar
-    if (_containsAny(text, [
-      '118',
-      '120',
-      '125',
-      '128',
-      'n2',
-      'w2.5',
-      'w3',
-      'n3',
-      'c3',
-      '102 soft beige',
-      '103 natural beige',
-      '03 nude',
-      '04 natural beige',
-      '402',
-      '403',
-      '02 natural beige',
-      '03 medium beige',
-      'soft beige',
-      '020 rose beige',
-      '030 sand beige',
-    ])) {
-      return 2;
-    }
-
-    // Orta tonlar
-    if (_containsAny(text, [
-      '220',
-      '230',
-      '310',
-      'w4',
-      'n4',
-      'w5',
-      'n5',
-      'c5',
-      '104 golden beige',
-      '105 honey beige',
-      '05 beige',
-      '06 honey',
-      '404',
-      '04 sand',
-      '05 honey beige',
-      'golden beige',
-      '040 warm beige',
-    ])) {
-      return 3;
-    }
-
-    // Orta-koyu tonlar
-    if (_containsAny(text, [
-      '334',
-      'w7',
-      'n7',
-      'c7',
-      'medium deep',
-      'mediumdeep',
-    ])) {
-      return 4;
-    }
-
-    // Koyu tonlar
-    if (_containsAny(text, [
-      '355',
-      'deep',
-      'dark',
-    ])) {
-      return 5;
-    }
-
-    // Kod belirlenemezse katalogdaki skinTones kullanılır.
-    if (product.skinTones.contains('light')) {
-      return 1;
-    }
-
-    if (product.skinTones.contains('lightMedium')) {
-      return 2;
-    }
-
-    if (product.skinTones.contains('medium')) {
-      return 3;
-    }
-
-    if (product.skinTones.contains('mediumDeep')) {
-      return 4;
-    }
-
-    if (product.skinTones.contains('deep')) {
-      return 5;
-    }
-
-    return null;
-  }
-
-  int? _concealerDepth(MakeupProduct product) {
-    final text = _normalize(
-      '${product.brand} ${product.product} ${product.shade}',
-    );
-
-    if (_containsAny(text, [
-      '05 ivory',
-      '10 light',
-      '15 fair',
-      'n1',
-      'c1',
-      'ivory',
-      'porcelain',
-    ])) {
-      return 1;
-    }
-
-    if (_containsAny(text, [
-      '20 sand',
-      'w2',
-      'n2',
-      'c2',
-      'light beige',
-      'natural beige',
-    ])) {
-      return 2;
-    }
-
-    if (_containsAny(text, [
-      '25 medium',
-      'n3',
-      'w3',
-      'c3',
-      'medium beige',
-    ])) {
-      return 3;
-    }
-
-    if (_containsAny(text, [
-      '30 honey',
-      'w4',
-      'n4',
-      'n5',
-      'honey',
-      'golden',
-    ])) {
-      return 4;
-    }
-
-    if (_containsAny(text, [
-      '35 deep',
-      '40 caramel',
-      '50 cafe',
-      'w7',
-      'n7',
-      'deep',
-      'dark',
-      'caramel',
-      'cafe',
-    ])) {
-      return 5;
-    }
-
-    if (product.skinTones.contains('light')) {
-      return 1;
-    }
-
-    if (product.skinTones.contains('lightMedium')) {
-      return 2;
-    }
-
-    if (product.skinTones.contains('medium')) {
-      return 3;
-    }
-
-    if (product.skinTones.contains('mediumDeep')) {
-      return 4;
-    }
-
-    if (product.skinTones.contains('deep')) {
-      return 5;
-    }
-
-    return null;
-  }
-
-  List<MakeupProduct> _takeDiverseProducts({
+  List<MakeupProduct> _selectDiverseScoredProducts({
     required List<_ScoredProduct> scoredProducts,
     required int limit,
-    required bool preferPriceDiversity,
   }) {
-    if (scoredProducts.isEmpty) {
-      return [];
-    }
-
     final selected = <MakeupProduct>[];
     final usedBrands = <String>{};
     final usedPriceLevels = <int>{};
 
-    final bestScore = scoredProducts.first.score;
+    for (final item in scoredProducts) {
+      if (selected.length >= limit) {
+        break;
+      }
 
-    bool isAlreadySelected(MakeupProduct product) {
-      return selected.any(
+      final product = item.product;
+
+      if (!usedBrands.contains(product.brand) &&
+          !usedPriceLevels.contains(product.priceLevel)) {
+        selected.add(product);
+        usedBrands.add(product.brand);
+        usedPriceLevels.add(product.priceLevel);
+      }
+    }
+
+    for (final item in scoredProducts) {
+      if (selected.length >= limit) {
+        break;
+      }
+
+      final product = item.product;
+
+      final alreadySelected = selected.any(
         (selectedProduct) =>
             selectedProduct.brand == product.brand &&
             selectedProduct.product == product.product &&
             selectedProduct.shade == product.shade,
       );
-    }
 
-    void addProduct(MakeupProduct product) {
-      selected.add(product);
-      usedBrands.add(_normalize(product.brand));
-      usedPriceLevels.add(product.priceLevel);
-    }
-
-    // Birinci ürün her zaman en yüksek puanlı eşleşmedir.
-    addProduct(scoredProducts.first.product);
-
-    // Farklı marka ve farklı fiyat seviyesi bul.
-    if (preferPriceDiversity) {
-      for (final item in scoredProducts.skip(1)) {
-        if (selected.length >= limit) {
-          break;
-        }
-
-        final product = item.product;
-        final normalizedBrand = _normalize(product.brand);
-
-        final closeEnough = item.score >= bestScore - 14;
-        final newBrand = !usedBrands.contains(normalizedBrand);
-        final newPriceLevel =
-            !usedPriceLevels.contains(product.priceLevel);
-
-        if (closeEnough && newBrand && newPriceLevel) {
-          addProduct(product);
-        }
+      if (!alreadySelected &&
+          !usedBrands.contains(product.brand)) {
+        selected.add(product);
+        usedBrands.add(product.brand);
       }
     }
 
-    // Farklı markalarla tamamla.
-    for (final item in scoredProducts.skip(1)) {
+    for (final item in scoredProducts) {
       if (selected.length >= limit) {
         break;
       }
 
       final product = item.product;
-      final normalizedBrand = _normalize(product.brand);
 
-      final closeEnough = item.score >= bestScore - 18;
-      final newBrand = !usedBrands.contains(normalizedBrand);
+      final alreadySelected = selected.any(
+        (selectedProduct) =>
+            selectedProduct.brand == product.brand &&
+            selectedProduct.product == product.product &&
+            selectedProduct.shade == product.shade,
+      );
 
-      if (closeEnough &&
-          newBrand &&
-          !isAlreadySelected(product)) {
-        addProduct(product);
+      if (!alreadySelected) {
+        selected.add(product);
       }
     }
 
-    // Yakın tonlu kalan ürünlerle tamamla.
-    for (final item in scoredProducts.skip(1)) {
-      if (selected.length >= limit) {
-        break;
+    return selected.take(limit).toList();
+  }
+
+  List<MakeupProduct> _findAffordableAlternatives({
+    required MakeupProduct referenceProduct,
+    required String category,
+    required String skinTone,
+    required String undertone,
+    required String skinType,
+    int minPrice = 300,
+    int maxPrice = 1000,
+  }) {
+    final alternatives =
+        ProductCatalog.products.where((product) {
+      if (product.category != category) {
+        return false;
       }
 
-      final product = item.product;
-      final closeEnough = item.score >= bestScore - 20;
+      final sameProduct =
+          product.brand == referenceProduct.brand &&
+              product.product ==
+                  referenceProduct.product &&
+              product.shade == referenceProduct.shade;
 
-      if (closeEnough && !isAlreadySelected(product)) {
-        addProduct(product);
+      if (sameProduct) {
+        return false;
       }
-    }
 
-    // Katalog küçükse son çare olarak kalan ürünleri ekle.
-    if (selected.length < limit) {
-      for (final item in scoredProducts.skip(1)) {
-        if (selected.length >= limit) {
-          break;
-        }
-
-        if (!isAlreadySelected(item.product)) {
-          addProduct(item.product);
-        }
+      if (product.shadeFamily !=
+          referenceProduct.shadeFamily) {
+        return false;
       }
-    }
 
-    return selected;
+      final sameUndertone = product.undertones.any(
+        referenceProduct.undertones.contains,
+      );
+
+      if (!sameUndertone) {
+        return false;
+      }
+
+      final sameSkinTone = product.skinTones.any(
+        referenceProduct.skinTones.contains,
+      );
+
+      if (!sameSkinTone) {
+        return false;
+      }
+
+      return product.averagePrice >= minPrice &&
+          product.averagePrice <= maxPrice;
+    }).toList();
+
+    alternatives.sort((a, b) {
+      final aScore = _selectionScore(
+        product: a,
+        skinTone: skinTone,
+        undertone: undertone,
+        skinType: skinType,
+      );
+
+      final bScore = _selectionScore(
+        product: b,
+        skinTone: skinTone,
+        undertone: undertone,
+        skinType: skinType,
+      );
+
+      final scoreComparison = bScore.compareTo(aScore);
+
+      if (scoreComparison != 0) {
+        return scoreComparison;
+      }
+
+      return a.averagePrice.compareTo(b.averagePrice);
+    });
+
+    return alternatives.take(3).toList();
+  }
+
+  String _buildShadeFamily({
+    required String skinTone,
+    required String undertone,
+  }) {
+    final undertonePart = switch (undertone) {
+      'cool' => 'Cool',
+      'warm' => 'Warm',
+      _ => 'Neutral',
+    };
+
+    return '$skinTone$undertonePart';
+  }
+
+  String _shadeFamilyLabel(String shadeFamily) {
+    const labels = {
+      'lightCool': 'Açık Soğuk',
+      'lightNeutral': 'Açık Nötr',
+      'lightWarm': 'Açık Sıcak',
+      'lightMediumCool': 'Açık-Orta Soğuk',
+      'lightMediumNeutral': 'Açık-Orta Nötr',
+      'lightMediumWarm': 'Açık-Orta Sıcak',
+      'mediumCool': 'Orta Soğuk',
+      'mediumNeutral': 'Orta Nötr',
+      'mediumWarm': 'Orta Sıcak',
+      'mediumDeepCool': 'Orta-Koyu Soğuk',
+      'mediumDeepNeutral': 'Orta-Koyu Nötr',
+      'mediumDeepWarm': 'Orta-Koyu Sıcak',
+      'deepCool': 'Koyu Soğuk',
+      'deepNeutral': 'Koyu Nötr',
+      'deepWarm': 'Koyu Sıcak',
+    };
+
+    return labels[shadeFamily] ?? shadeFamily;
   }
 
   String _detectUndertone(String value) {
@@ -763,14 +826,13 @@ class ProductMatcher {
     }
 
     if (normalized.contains('orta koyu') ||
-        normalized.contains('medium deep')) {
+        normalized.contains('medium deep') ||
+        normalized.contains('medium-deep')) {
       return 'mediumDeep';
     }
 
     if (normalized.contains('acik-orta') ||
         normalized.contains('acik orta') ||
-        normalized.contains('acik ile acik-orta') ||
-        normalized.contains('acik ile acik orta') ||
         normalized.contains('acik bugday') ||
         normalized.contains('light medium') ||
         normalized.contains('light-medium')) {
@@ -796,12 +858,6 @@ class ProductMatcher {
     return 'lightMedium';
   }
 
-  bool _containsAny(String text, List<String> values) {
-    return values.any(
-      (value) => text.contains(_normalize(value)),
-    );
-  }
-
   String _normalize(String value) {
     return value
         .toLowerCase()
@@ -823,5 +879,15 @@ class _ScoredProduct {
   const _ScoredProduct({
     required this.product,
     required this.score,
+  });
+}
+
+class _ProductMatch {
+  final int score;
+  final String reason;
+
+  const _ProductMatch({
+    required this.score,
+    required this.reason,
   });
 }

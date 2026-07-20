@@ -10,8 +10,7 @@ class ProductMatcher {
       result['undertone']?.toString() ?? '',
     );
 
-    final detectedSkinType =
-        result['skinType']?.toString() ?? '';
+    final detectedSkinType = result['skinType']?.toString() ?? '';
 
     final shadeFamily = _buildShadeFamily(
       skinTone: detectedSkinTone,
@@ -26,8 +25,9 @@ class ProductMatcher {
       skinType: detectedSkinType,
     );
 
-    final selectedFoundation =
-        foundations.isNotEmpty ? foundations.first : null;
+    final selectedFoundation = foundations.isNotEmpty
+        ? foundations.first
+        : null;
 
     final affordableFoundations = selectedFoundation != null
         ? _findAffordableAlternatives(
@@ -110,8 +110,7 @@ class ProductMatcher {
       },
 
       if (blushes.isNotEmpty) ...{
-        'blushBrand':
-            '${blushes.first.brand} — ${blushes.first.product}',
+        'blushBrand': '${blushes.first.brand} — ${blushes.first.product}',
         'blushCode': blushes.first.shade,
         'blushRecommendations': blushes
             .map(
@@ -143,6 +142,10 @@ class ProductMatcher {
     };
   }
 
+  List<ProductStore> _defaultStoresForBrand(String brand) {
+    return const [ProductStore.trendyol];
+  }
+
   Map<String, dynamic> _productToMap(
     MakeupProduct product, {
     required String skinTone,
@@ -155,6 +158,10 @@ class ProductMatcher {
       undertone: undertone,
       skinType: skinType,
     );
+
+    final resolvedStores = product.stores.isNotEmpty
+        ? product.stores
+        : _defaultStoresForBrand(product.brand);
 
     return {
       'brand': product.brand,
@@ -171,6 +178,10 @@ class ProductMatcher {
       'crueltyFree': product.crueltyFree,
       'matchScore': match.score,
       'matchReason': match.reason,
+      'stores': resolvedStores.map((store) => store.name).toList(),
+      'storeLinks': product.storeLinks.map(
+        (store, link) => MapEntry(store.name, link),
+      ),
     };
   }
 
@@ -180,51 +191,110 @@ class ProductMatcher {
     required String undertone,
     required String skinType,
   }) {
-    int score = 15;
+    int score = 18;
     final reasons = <String>[];
 
     final normalizedSkinType = _normalize(skinType);
     final normalizedFinish = _normalize(product.finish);
+    final normalizedCoverage = _normalize(product.coverage);
+
+    final hasReliableSkinType = _hasReliableSkinType(normalizedSkinType);
+
+    final expectedShadeFamily = _buildShadeFamily(
+      skinTone: skinTone,
+      undertone: undertone,
+    );
+
+    // ------------------------------------------------------------
+    // 1. TEN TONU EŞLEŞMESİ
+    // ------------------------------------------------------------
 
     if (product.skinTones.contains(skinTone)) {
-      score += 30;
+      score += 24;
       reasons.add('cilt tonunla uyumlu');
+
+      if (product.skinTones.length == 1) {
+        score += 4;
+      } else if (product.skinTones.length == 2) {
+        score += 2;
+      }
+    } else if (_isNeighbourSkinTone(
+      productSkinTones: product.skinTones,
+      detectedSkinTone: skinTone,
+    )) {
+      score += 10;
+      reasons.add('yakın ten tonu ailesiyle uyum sağlayabilir');
     }
+
+    // ------------------------------------------------------------
+    // 2. ALT TON EŞLEŞMESİ
+    // ------------------------------------------------------------
 
     if (product.undertones.contains(undertone)) {
-      score += 25;
+      score += 20;
       reasons.add('alt tonunla uyumlu');
+
+      if (product.undertones.length == 1) {
+        score += 4;
+      } else if (product.undertones.length == 2) {
+        score += 2;
+      }
     } else if (product.undertones.contains('neutral')) {
-      score += 10;
-      reasons.add('nötr alt tonuyla uyum sağlayabilir');
+      score += 9;
+      reasons.add('nötr yapısıyla alt tonuna uyum sağlayabilir');
     }
 
-    if (normalizedSkinType.isNotEmpty) {
+    // ------------------------------------------------------------
+    // 3. TON AİLESİ EŞLEŞMESİ
+    // Fondöten ve kapatıcıda daha belirleyicidir.
+    // ------------------------------------------------------------
+
+    if (product.shadeFamily.isNotEmpty) {
+      if (product.shadeFamily == expectedShadeFamily) {
+        score += 10;
+        reasons.add('ton ailesiyle birebir eşleşiyor');
+      } else if (product.shadeFamily.startsWith(skinTone)) {
+        score += 4;
+        reasons.add('ten tonu ailesine yakın bir renktir');
+      }
+    }
+
+    // ------------------------------------------------------------
+    // 4. CİLT TİPİ VE BİTİŞ UYUMU
+    // Cilt tipi güvenilir biçimde belirlenmişse çalışır.
+    // ------------------------------------------------------------
+
+    if (hasReliableSkinType) {
       final skinTypeMatched = product.skinTypes.any((type) {
         final normalizedProductType = _normalize(type);
 
-        return normalizedProductType ==
-                normalizedSkinType ||
-            normalizedSkinType.contains(
-              normalizedProductType,
-            ) ||
-            normalizedProductType.contains(
-              normalizedSkinType,
-            );
+        return normalizedProductType == normalizedSkinType ||
+            normalizedSkinType.contains(normalizedProductType) ||
+            normalizedProductType.contains(normalizedSkinType);
       });
 
       if (skinTypeMatched) {
-        score += 20;
+        score += 10;
         reasons.add('cilt tipine uygun');
       }
 
-      if (normalizedSkinType.contains('yagli') ||
-          normalizedSkinType.contains('karma')) {
+      if (normalizedSkinType.contains('yagli')) {
         if (normalizedFinish.contains('mat')) {
           score += 5;
-          reasons.add(
-            'mat bitişi parlama kontrolüne yardımcı olur',
-          );
+          reasons.add('mat bitişi parlama kontrolünü destekler');
+        }
+
+        if (normalizedFinish.contains('nemli')) {
+          score -= 3;
+        }
+      }
+
+      if (normalizedSkinType.contains('karma')) {
+        if (normalizedFinish.contains('mat') ||
+            normalizedFinish.contains('dogal') ||
+            normalizedFinish.contains('saten')) {
+          score += 4;
+          reasons.add('bitişi karma cilt için dengeli');
         }
       }
 
@@ -232,28 +302,167 @@ class ProductMatcher {
         if (normalizedFinish.contains('dogal') ||
             normalizedFinish.contains('isilti') ||
             normalizedFinish.contains('nemli') ||
-            normalizedFinish.contains('saten')) {
+            normalizedFinish.contains('saten') ||
+            normalizedFinish.contains('parlak')) {
           score += 5;
-          reasons.add(
-            'bitişi kuru cilt için daha uygundur',
-          );
+          reasons.add('bitişi kuru cilt için daha uygundur');
         }
 
         if (normalizedFinish.contains('mat') &&
-            !normalizedFinish.contains('dogal')) {
+            !normalizedFinish.contains('dogal') &&
+            !normalizedFinish.contains('yumusa')) {
           score -= 5;
+        }
+      }
+
+      if (normalizedSkinType.contains('normal')) {
+        if (normalizedFinish.contains('dogal') ||
+            normalizedFinish.contains('saten')) {
+          score += 4;
+          reasons.add('bitişi normal cilt için dengeli');
         }
       }
     }
 
-    final finalScore = score.clamp(0, 100).toInt();
+    // ------------------------------------------------------------
+    // 5. ÜRÜN VERİSİNİN TAMLIĞI
+    // ------------------------------------------------------------
+
+    if (product.finish.trim().isNotEmpty) {
+      score += 1;
+    }
+
+    if (product.coverage.trim().isNotEmpty) {
+      score += 1;
+    }
+
+    if (product.skinTypes.isNotEmpty) {
+      score += 1;
+    }
+
+    if (product.averagePrice > 0) {
+      score += 1;
+    }
+
+    // ------------------------------------------------------------
+    // 6. KAPATICILIK VE PİGMENT YAPISI
+    // ------------------------------------------------------------
+
+    if (normalizedCoverage.contains('katmanlanabilir')) {
+      score += 2;
+    }
+
+    if (normalizedCoverage.contains('yogun pigmentli') ||
+        normalizedCoverage.contains('orta-yuksek')) {
+      score += 1;
+    }
+
+    // ------------------------------------------------------------
+    // 7. FİYAT SEGMENTİ
+    // Fiyat, uyumluluğu yükseltmez. Yalnızca açıklama üretir.
+    // ------------------------------------------------------------
+
+    switch (product.priceSegment) {
+      case PriceSegment.budget:
+        reasons.add('uygun fiyatlı bir alternatif');
+        break;
+
+      case PriceSegment.midRange:
+        reasons.add('fiyat ve performans dengesi güçlü');
+        break;
+
+      case PriceSegment.premium:
+        reasons.add('premium segment alternatifi');
+        break;
+    }
+
+    // Cilt tipi bilinmiyorsa aşırı kesin puan göstermiyoruz.
+    final maximumScore = hasReliableSkinType ? 97 : 94;
+
+    final finalScore = score.clamp(0, maximumScore).toInt();
+
+    final uniqueReasons = _uniqueReasons(reasons);
 
     return _ProductMatch(
       score: finalScore,
-      reason: reasons.isEmpty
+      reason: uniqueReasons.isEmpty
           ? 'genel ürün özelliklerine göre önerildi'
-          : reasons.join(', '),
+          : uniqueReasons.join(', '),
     );
+  }
+
+  bool _hasReliableSkinType(String normalizedSkinType) {
+    if (normalizedSkinType.isEmpty) {
+      return false;
+    }
+
+    const uncertainExpressions = [
+      'belirlenemez',
+      'guvenilir bicimde belirlenemez',
+      'fotograftan belirlenemez',
+      'bilinmiyor',
+      'belirsiz',
+      'tespit edilemedi',
+      'anlasilamadi',
+    ];
+
+    for (final expression in uncertainExpressions) {
+      if (normalizedSkinType.contains(expression)) {
+        return false;
+      }
+    }
+
+    return normalizedSkinType.contains('normal') ||
+        normalizedSkinType.contains('karma') ||
+        normalizedSkinType.contains('yagli') ||
+        normalizedSkinType.contains('kuru') ||
+        normalizedSkinType.contains('hassas');
+  }
+
+  bool _isNeighbourSkinTone({
+    required List<String> productSkinTones,
+    required String detectedSkinTone,
+  }) {
+    const toneOrder = ['light', 'lightMedium', 'medium', 'mediumDeep', 'deep'];
+
+    final detectedIndex = toneOrder.indexOf(detectedSkinTone);
+
+    if (detectedIndex == -1) {
+      return false;
+    }
+
+    for (final productTone in productSkinTones) {
+      final productIndex = toneOrder.indexOf(productTone);
+
+      if (productIndex == -1) {
+        continue;
+      }
+
+      if ((productIndex - detectedIndex).abs() == 1) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  List<String> _uniqueReasons(List<String> reasons) {
+    final uniqueReasons = <String>[];
+    final normalizedReasons = <String>{};
+
+    for (final reason in reasons) {
+      final normalizedReason = _normalize(reason);
+
+      if (normalizedReason.isEmpty ||
+          normalizedReasons.contains(normalizedReason)) {
+        continue;
+      }
+
+      normalizedReasons.add(normalizedReason);
+      uniqueReasons.add(reason);
+    }
+
+    return uniqueReasons;
   }
 
   int _selectionScore({
@@ -286,9 +495,7 @@ class ProductMatcher {
     }
 
     var matchingProducts = categoryProducts
-        .where(
-          (product) => product.shadeFamily == shadeFamily,
-        )
+        .where((product) => product.shadeFamily == shadeFamily)
         .toList();
 
     if (matchingProducts.isEmpty) {
@@ -332,47 +539,70 @@ class ProductMatcher {
       return a.averagePrice.compareTo(b.averagePrice);
     });
 
-    return _selectByPriceSegment(matchingProducts);
+    return _selectByPriceSegment(
+      matchingProducts,
+      skinTone,
+      undertone,
+      skinType,
+    );
   }
 
   List<MakeupProduct> _selectByPriceSegment(
     List<MakeupProduct> products,
+    String skinTone,
+    String undertone,
+    String skinType,
   ) {
-    MakeupProduct? premium;
-    MakeupProduct? midRange;
-    MakeupProduct? budget;
-
-    for (final product in products) {
-      switch (product.priceSegment) {
-        case PriceSegment.premium:
-          premium ??= product;
-          break;
-
-        case PriceSegment.midRange:
-          midRange ??= product;
-          break;
-
-        case PriceSegment.budget:
-          budget ??= product;
-          break;
-      }
+    if (products.isEmpty) {
+      return [];
     }
 
     final selected = <MakeupProduct>[];
+    final usedBrands = <String>{};
+    final usedSegments = <PriceSegment>{};
 
-    if (midRange != null) {
-      selected.add(midRange);
+    // Listenin ilk ürünü en yüksek puanlı üründür.
+    final bestProduct = products.first;
+
+    selected.add(bestProduct);
+    usedBrands.add(bestProduct.brand);
+    usedSegments.add(bestProduct.priceSegment);
+
+    // Önce farklı marka ve farklı fiyat segmenti seç.
+    for (final product in products.skip(1)) {
+      if (selected.length >= 3) {
+        break;
+      }
+
+      if (!usedBrands.contains(product.brand) &&
+          !usedSegments.contains(product.priceSegment)) {
+        selected.add(product);
+        usedBrands.add(product.brand);
+        usedSegments.add(product.priceSegment);
+      }
     }
 
-    if (premium != null) {
-      selected.add(premium);
+    // Listeyi farklı markalarla tamamla.
+    for (final product in products.skip(1)) {
+      if (selected.length >= 3) {
+        break;
+      }
+
+      final alreadySelected = selected.any(
+        (item) =>
+            item.brand == product.brand &&
+            item.product == product.product &&
+            item.shade == product.shade,
+      );
+
+      if (!alreadySelected && !usedBrands.contains(product.brand)) {
+        selected.add(product);
+        usedBrands.add(product.brand);
+      }
     }
 
-    if (budget != null) {
-      selected.add(budget);
-    }
-
-    for (final product in products) {
+    // Yeterli farklı marka yoksa kalan yüksek puanlı ürünleri ekle.
+    for (final product in products.skip(1)) {
       if (selected.length >= 3) {
         break;
       }
@@ -389,6 +619,31 @@ class ProductMatcher {
       }
     }
 
+    // Sonuçları tekrar uyum puanına göre sırala.
+    selected.sort((a, b) {
+      final aScore = _selectionScore(
+        product: a,
+        skinTone: skinTone,
+        undertone: undertone,
+        skinType: skinType,
+      );
+
+      final bScore = _selectionScore(
+        product: b,
+        skinTone: skinTone,
+        undertone: undertone,
+        skinType: skinType,
+      );
+
+      final scoreComparison = bScore.compareTo(aScore);
+
+      if (scoreComparison != 0) {
+        return scoreComparison;
+      }
+
+      return a.averagePrice.compareTo(b.averagePrice);
+    });
+
     return selected.take(3).toList();
   }
 
@@ -399,9 +654,7 @@ class ProductMatcher {
     MakeupProduct? foundation,
   }) {
     final products = ProductCatalog.products
-        .where(
-          (product) => product.category == 'concealer',
-        )
+        .where((product) => product.category == 'concealer')
         .toList();
 
     if (products.isEmpty) {
@@ -417,8 +670,7 @@ class ProductMatcher {
       );
 
       if (foundation != null) {
-        if (product.shadeFamily ==
-            foundation.shadeFamily) {
+        if (product.shadeFamily == foundation.shadeFamily) {
           score += 25;
         }
 
@@ -432,23 +684,17 @@ class ProductMatcher {
         );
       }
 
-      return _ScoredProduct(
-        product: product,
-        score: score,
-      );
+      return _ScoredProduct(product: product, score: score);
     }).toList();
 
     scoredProducts.sort((a, b) {
-      final scoreComparison =
-          b.score.compareTo(a.score);
+      final scoreComparison = b.score.compareTo(a.score);
 
       if (scoreComparison != 0) {
         return scoreComparison;
       }
 
-      return a.product.averagePrice.compareTo(
-        b.product.averagePrice,
-      );
+      return a.product.averagePrice.compareTo(b.product.averagePrice);
     });
 
     return _selectDiverseScoredProducts(
@@ -461,17 +707,14 @@ class ProductMatcher {
     required MakeupProduct foundation,
     required MakeupProduct concealer,
   }) {
-    final foundationShade =
-        _normalize(foundation.shade);
+    final foundationShade = _normalize(foundation.shade);
 
-    final concealerShade =
-        _normalize(concealer.shade);
+    final concealerShade = _normalize(concealer.shade);
 
     int score = 0;
 
     if (foundation.shadeFamily.isNotEmpty &&
-        foundation.shadeFamily ==
-            concealer.shadeFamily) {
+        foundation.shadeFamily == concealer.shadeFamily) {
       score += 20;
     }
 
@@ -497,8 +740,7 @@ class ProductMatcher {
         score += 18;
       }
 
-      if (concealerShade.contains('honey') ||
-          concealerShade.contains('deep')) {
+      if (concealerShade.contains('honey') || concealerShade.contains('deep')) {
         score -= 10;
       }
     }
@@ -568,39 +810,41 @@ class ProductMatcher {
     );
 
     final scoredProducts = products.map((product) {
-      int score = _selectionScore(
+      final visibleMatchScore = _selectionScore(
         product: product,
         skinTone: detectedSkinTone,
         undertone: detectedUndertone,
         skinType: detectedSkinType,
       );
 
+      int colorTagBonus = 0;
+
       for (final tag in product.colorTags) {
         final normalizedTag = _normalize(tag);
 
-        if (normalizedTag.isNotEmpty &&
-            sourceText.contains(normalizedTag)) {
-          score += 4;
+        if (normalizedTag.isNotEmpty && sourceText.contains(normalizedTag)) {
+          colorTagBonus += 1;
         }
       }
 
-      return _ScoredProduct(
-        product: product,
-        score: score,
-      );
+      /*
+     * Görünen uyum puanı her zaman önceliklidir.
+     * Renk etiketi bonusu yalnızca aynı puanlı ürünlerde
+     * sıralamayı belirleyen küçük bir yardımcı değerdir.
+     */
+      final rankingScore = (visibleMatchScore * 100) + colorTagBonus;
+
+      return _ScoredProduct(product: product, score: rankingScore);
     }).toList();
 
     scoredProducts.sort((a, b) {
-      final scoreComparison =
-          b.score.compareTo(a.score);
+      final scoreComparison = b.score.compareTo(a.score);
 
       if (scoreComparison != 0) {
         return scoreComparison;
       }
 
-      return a.product.priceLevel.compareTo(
-        b.product.priceLevel,
-      );
+      return a.product.averagePrice.compareTo(b.product.averagePrice);
     });
 
     return _selectDiverseScoredProducts(
@@ -646,8 +890,7 @@ class ProductMatcher {
             selectedProduct.shade == product.shade,
       );
 
-      if (!alreadySelected &&
-          !usedBrands.contains(product.brand)) {
+      if (!alreadySelected && !usedBrands.contains(product.brand)) {
         selected.add(product);
         usedBrands.add(product.brand);
       }
@@ -684,24 +927,21 @@ class ProductMatcher {
     int minPrice = 300,
     int maxPrice = 1000,
   }) {
-    final alternatives =
-        ProductCatalog.products.where((product) {
+    final alternatives = ProductCatalog.products.where((product) {
       if (product.category != category) {
         return false;
       }
 
       final sameProduct =
           product.brand == referenceProduct.brand &&
-              product.product ==
-                  referenceProduct.product &&
-              product.shade == referenceProduct.shade;
+          product.product == referenceProduct.product &&
+          product.shade == referenceProduct.shade;
 
       if (sameProduct) {
         return false;
       }
 
-      if (product.shadeFamily !=
-          referenceProduct.shadeFamily) {
+      if (product.shadeFamily != referenceProduct.shadeFamily) {
         return false;
       }
 
@@ -790,13 +1030,11 @@ class ProductMatcher {
   String _detectUndertone(String value) {
     final normalized = _normalize(value);
 
-    if (normalized.contains('notr') &&
-        normalized.contains('soguk')) {
+    if (normalized.contains('notr') && normalized.contains('soguk')) {
       return 'cool';
     }
 
-    if (normalized.contains('notr') &&
-        normalized.contains('sicak')) {
+    if (normalized.contains('notr') && normalized.contains('sicak')) {
       return 'warm';
     }
 
@@ -820,8 +1058,7 @@ class ProductMatcher {
   String _detectSkinTone(String value) {
     final normalized = _normalize(value);
 
-    if (normalized.contains('cok koyu') ||
-        normalized.contains('deep')) {
+    if (normalized.contains('cok koyu') || normalized.contains('deep')) {
       return 'deep';
     }
 
@@ -876,18 +1113,12 @@ class _ScoredProduct {
   final MakeupProduct product;
   final int score;
 
-  const _ScoredProduct({
-    required this.product,
-    required this.score,
-  });
+  const _ScoredProduct({required this.product, required this.score});
 }
 
 class _ProductMatch {
   final int score;
   final String reason;
 
-  const _ProductMatch({
-    required this.score,
-    required this.reason,
-  });
+  const _ProductMatch({required this.score, required this.reason});
 }

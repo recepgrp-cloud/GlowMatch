@@ -1,3 +1,4 @@
+import 'store_mapper.dart';
 import '../data/product_catalog.dart';
 
 class ProductMatcher {
@@ -142,10 +143,6 @@ class ProductMatcher {
     };
   }
 
-  List<ProductStore> _defaultStoresForBrand(String brand) {
-    return const [ProductStore.trendyol];
-  }
-
   Map<String, dynamic> _productToMap(
     MakeupProduct product, {
     required String skinTone,
@@ -159,9 +156,23 @@ class ProductMatcher {
       skinType: skinType,
     );
 
-    final resolvedStores = product.stores.isNotEmpty
-        ? product.stores
-        : _defaultStoresForBrand(product.brand);
+    final storeResolution = StoreMapper.resolve(
+      brand: product.brand,
+      product: product.product,
+      shade: product.shade,
+    );
+
+    final resolvedStores = <ProductStore>{
+      ...storeResolution.stores,
+      ...product.stores,
+      ...storeResolution.directLinks.keys,
+      ...product.storeLinks.keys,
+    }.toList();
+
+    final resolvedLinks = <ProductStore, String>{
+      ...storeResolution.directLinks,
+      ...product.storeLinks,
+    };
 
     return {
       'brand': product.brand,
@@ -179,7 +190,7 @@ class ProductMatcher {
       'matchScore': match.score,
       'matchReason': match.reason,
       'stores': resolvedStores.map((store) => store.name).toList(),
-      'storeLinks': product.storeLinks.map(
+      'storeLinks': resolvedLinks.map(
         (store, link) => MapEntry(store.name, link),
       ),
     };

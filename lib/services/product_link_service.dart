@@ -26,13 +26,25 @@ class ProductLinkService {
       shade: shade,
     );
 
-    return Uri.https(
-      'www.google.com',
-      '/search',
-      {
-        'q': '$searchText satın al',
-      },
+    return Uri.https('www.google.com', '/search', {
+      'q': '$searchText satın al',
+    });
+  }
+
+  static Uri _officialSearchUri({
+    required String brand,
+    required String product,
+    required String shade,
+  }) {
+    final searchText = _buildSearchText(
+      brand: brand,
+      product: product,
+      shade: shade,
     );
+
+    return Uri.https('www.google.com', '/search', {
+      'q': '$searchText $brand resmi site',
+    });
   }
 
   static Uri _trendyolSearchUri({
@@ -46,13 +58,7 @@ class ProductLinkService {
       shade: shade,
     );
 
-    return Uri.https(
-      'www.trendyol.com',
-      '/sr',
-      {
-        'q': searchText,
-      },
-    );
+    return Uri.https('www.trendyol.com', '/sr', {'q': searchText});
   }
 
   static Uri _gratisSearchUri({
@@ -60,19 +66,14 @@ class ProductLinkService {
     required String product,
     required String shade,
   }) {
-    final searchText = _buildSearchText(
-      brand: brand,
-      product: product,
-      shade: shade,
-    );
+    final searchText = [
+      brand.trim(),
+      product.trim(),
+    ].where((value) => value.isNotEmpty).join(' ');
 
-    return Uri.https(
-      'www.google.com',
-      '/search',
-      {
-        'q': 'site:gratis.com $searchText',
-      },
-    );
+    return Uri.https('www.google.com', '/search', {
+      'q': 'site:gratis.com $searchText',
+    });
   }
 
   static Uri _watsonsSearchUri({
@@ -86,13 +87,9 @@ class ProductLinkService {
       shade: shade,
     );
 
-    return Uri.https(
-      'www.google.com',
-      '/search',
-      {
-        'q': 'site:watsons.com.tr $searchText',
-      },
-    );
+    return Uri.https('www.google.com', '/search', {
+      'q': 'site:watsons.com.tr $searchText',
+    });
   }
 
   static Uri _sephoraSearchUri({
@@ -106,13 +103,9 @@ class ProductLinkService {
       shade: shade,
     );
 
-    return Uri.https(
-      'www.google.com',
-      '/search',
-      {
-        'q': 'site:sephora.com.tr $searchText',
-      },
-    );
+    return Uri.https('www.google.com', '/search', {
+      'q': 'site:sephora.com.tr $searchText',
+    });
   }
 
   static Uri _boynerSearchUri({
@@ -126,13 +119,9 @@ class ProductLinkService {
       shade: shade,
     );
 
-    return Uri.https(
-      'www.google.com',
-      '/search',
-      {
-        'q': 'site:boyner.com.tr $searchText',
-      },
-    );
+    return Uri.https('www.google.com', '/search', {
+      'q': 'site:boyner.com.tr $searchText',
+    });
   }
 
   static Uri _amazonSearchUri({
@@ -146,13 +135,24 @@ class ProductLinkService {
       shade: shade,
     );
 
-    return Uri.https(
-      'www.amazon.com.tr',
-      '/s',
-      {
-        'k': searchText,
-      },
-    );
+    return Uri.https('www.amazon.com.tr', '/s', {'k': searchText});
+  }
+
+  static Uri? _validDirectUri(String? directLink) {
+    if (directLink == null || directLink.trim().isEmpty) {
+      return null;
+    }
+
+    final uri = Uri.tryParse(directLink.trim());
+
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        uri.host.trim().isEmpty) {
+      return null;
+    }
+
+    return uri;
   }
 
   static Uri buildStoreUri({
@@ -162,67 +162,37 @@ class ProductLinkService {
     required String shade,
     String? directLink,
   }) {
-    if (directLink != null &&
-        directLink.trim().isNotEmpty) {
-      final directUri = Uri.tryParse(
-        directLink.trim(),
-      );
+    final directUri = _validDirectUri(directLink);
 
-      if (directUri != null) {
-        return directUri;
-      }
+    if (directUri != null) {
+      return directUri;
     }
 
-    switch (store.toLowerCase()) {
+    switch (store.trim().toLowerCase()) {
       case 'trendyol':
-        return _trendyolSearchUri(
-          brand: brand,
-          product: product,
-          shade: shade,
-        );
+        return _trendyolSearchUri(brand: brand, product: product, shade: shade);
 
       case 'gratis':
-        return _gratisSearchUri(
-          brand: brand,
-          product: product,
-          shade: shade,
-        );
+        return _gratisSearchUri(brand: brand, product: product, shade: shade);
 
       case 'watsons':
-        return _watsonsSearchUri(
-          brand: brand,
-          product: product,
-          shade: shade,
-        );
+        return _watsonsSearchUri(brand: brand, product: product, shade: shade);
 
       case 'sephora':
-        return _sephoraSearchUri(
-          brand: brand,
-          product: product,
-          shade: shade,
-        );
+        return _sephoraSearchUri(brand: brand, product: product, shade: shade);
 
       case 'boyner':
-        return _boynerSearchUri(
-          brand: brand,
-          product: product,
-          shade: shade,
-        );
+        return _boynerSearchUri(brand: brand, product: product, shade: shade);
 
       case 'amazon':
-        return _amazonSearchUri(
-          brand: brand,
-          product: product,
-          shade: shade,
-        );
+        return _amazonSearchUri(brand: brand, product: product, shade: shade);
+
+      case 'official':
+        return _officialSearchUri(brand: brand, product: product, shade: shade);
 
       case 'google':
       default:
-        return _googleSearchUri(
-          brand: brand,
-          product: product,
-          shade: shade,
-        );
+        return _googleSearchUri(brand: brand, product: product, shade: shade);
     }
   }
 
@@ -242,9 +212,19 @@ class ProductLinkService {
     );
 
     try {
-      return await launchUrl(
+      final opened = await launchUrl(
         uri,
         mode: LaunchMode.externalApplication,
+        webOnlyWindowName: '_blank',
+      );
+
+      if (opened) {
+        return true;
+      }
+
+      return await launchUrl(
+        uri,
+        mode: LaunchMode.platformDefault,
         webOnlyWindowName: '_blank',
       );
     } catch (_) {

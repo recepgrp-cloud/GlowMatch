@@ -162,17 +162,18 @@ class ProductMatcher {
       shade: product.shade,
     );
 
-    final resolvedStores = <ProductStore>{
-      ...storeResolution.stores,
-      ...product.stores,
-      ...storeResolution.directLinks.keys,
-      ...product.storeLinks.keys,
-    }.toList();
-
     final resolvedLinks = <ProductStore, String>{
       ...storeResolution.directLinks,
       ...product.storeLinks,
     };
+
+    final safeLinks = <ProductStore, String>{
+      for (final entry in resolvedLinks.entries)
+        if (_isValidDirectProductLink(entry.value))
+          entry.key: entry.value.trim(),
+    };
+
+    final resolvedStores = safeLinks.keys.toList();
 
     return {
       'brand': product.brand,
@@ -190,10 +191,32 @@ class ProductMatcher {
       'matchScore': match.score,
       'matchReason': match.reason,
       'stores': resolvedStores.map((store) => store.name).toList(),
-      'storeLinks': resolvedLinks.map(
-        (store, link) => MapEntry(store.name, link),
-      ),
+      'storeLinks': safeLinks.map((store, link) => MapEntry(store.name, link)),
     };
+  }
+
+  bool _isValidDirectProductLink(String link) {
+    final trimmedLink = link.trim();
+
+    if (trimmedLink.isEmpty) {
+      return false;
+    }
+
+    final uri = Uri.tryParse(trimmedLink);
+
+    if (uri == null) {
+      return false;
+    }
+
+    if (uri.scheme != 'https' && uri.scheme != 'http') {
+      return false;
+    }
+
+    if (uri.host.trim().isEmpty) {
+      return false;
+    }
+
+    return true;
   }
 
   _ProductMatch _calculateProductMatch({

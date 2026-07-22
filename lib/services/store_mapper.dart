@@ -4,7 +4,7 @@ class StoreResolution {
   final List<ProductStore> stores;
   final Map<ProductStore, String> directLinks;
 
-  const StoreResolution({required this.stores, this.directLinks = const {}});
+  const StoreResolution({this.stores = const [], this.directLinks = const {}});
 }
 
 class StoreMapper {
@@ -19,262 +19,64 @@ class StoreMapper {
     final normalizedProduct = _normalize(product);
     final normalizedShade = _normalize(shade);
 
+    final directLinks = <ProductStore, String>{};
+
     // ============================================================
-    // MAC
+    // RARE BEAUTY - SOFT PINCH
+    // Yalnızca doğrulanmış renk ve ürün bağlantıları gösterilir.
     // ============================================================
 
-    if (_brandMatches(normalizedBrand, const ['mac', 'm a c']) &&
-        normalizedProduct.contains('studio fix fluid')) {
-      return const StoreResolution(
-        stores: [ProductStore.official, ProductStore.trendyol],
-        directLinks: {
-          ProductStore.official:
-              'https://www.maccosmetics.com.tr/product/13847/94351/urunler/makyaj/yuz/fondoten/studio-fix-fluid-fondoten-15ml-mini-mac',
-        },
-      );
+    final isRareBeautySoftPinch =
+        normalizedBrand == 'rare beauty' &&
+        normalizedProduct.contains('soft pinch');
+
+    if (isRareBeautySoftPinch) {
+      if (_containsAny(normalizedShade, const ['hope'])) {
+        directLinks[ProductStore.sephora] =
+            'https://www.sephora.com.tr/p/soft-pinch---likit-allik-577234.html';
+      } else if (_containsAny(normalizedShade, const ['virtue'])) {
+        directLinks[ProductStore.sephora] =
+            'https://www.sephora.com.tr/p/soft-pinch---likit-allik-651745.html';
+      } else if (_containsAny(normalizedShade, const ['encourage'])) {
+        directLinks[ProductStore.sephora] =
+            'https://www.sephora.com.tr/p/soft-pinch---likit-allik-577236.html';
+      } else if (_containsAny(normalizedShade, const ['grateful'])) {
+        directLinks[ProductStore.sephora] =
+            'https://www.sephora.com.tr/p/soft-pinch---likit-allik-527974.html';
+      } else if (_containsAny(normalizedShade, const ['love'])) {
+        directLinks[ProductStore.sephora] =
+            'https://www.sephora.com.tr/p/soft-pinch---likit-allik-527978.html';
+      } else if (_containsAny(normalizedShade, const ['adore'])) {
+        directLinks[ProductStore.sephora] =
+            'https://www.sephora.com.tr/p/soft-pinch---likit-allik-792445.html';
+      } else if (_containsAny(normalizedShade, const ['spirited'])) {
+        directLinks[ProductStore.sephora] =
+            'https://www.sephora.com.tr/p/soft-pinch---likit-allik-792446.html';
+      } else if (_containsAny(normalizedShade, const ['resilience'])) {
+        directLinks[ProductStore.sephora] =
+            'https://www.sephora.com.tr/p/soft-pinch---likit-allik-792231.html';
+      }
     }
 
     // ============================================================
-    // RARE BEAUTY
-    // ============================================================
-
-    if (normalizedBrand == 'rare beauty' &&
-        normalizedProduct.contains('soft pinch') &&
-        normalizedProduct.contains('blush')) {
-      return StoreResolution(
-        stores: const [ProductStore.sephora, ProductStore.trendyol],
-        directLinks: {
-          ProductStore.sephora: _rareBeautyBlushLink(normalizedShade),
-        },
-      );
-    }
-
-    // Katalogdaki ürün adı Türkçe veya farklı yazılmışsa
-    // ikinci kontrol devreye girer.
-    if (normalizedBrand == 'rare beauty' &&
-        normalizedProduct.contains('soft pinch')) {
-      return StoreResolution(
-        stores: const [ProductStore.sephora, ProductStore.trendyol],
-        directLinks: {
-          ProductStore.sephora: _rareBeautyBlushLink(normalizedShade),
-        },
-      );
-    }
-
-    // ============================================================
-    // BENEFIT
-    // ============================================================
-
-    if (_brandMatches(normalizedBrand, const [
-          'benefit',
-          'benefit cosmetics',
-        ]) &&
-        (normalizedProduct.contains('cheek powder') ||
-            normalizedProduct.contains('shellie')) &&
-        normalizedShade.contains('shellie')) {
-      return const StoreResolution(
-        stores: [ProductStore.sephora, ProductStore.trendyol],
-        directLinks: {
-          ProductStore.sephora:
-              'https://www.sephora.com.tr/p/shellie---mercan-ve-pembe-tonlarinda-allik-585603.html',
-        },
-      );
-    }
-
-    if (_brandMatches(normalizedBrand, const [
-      'benefit',
-      'benefit cosmetics',
-    ])) {
-      return const StoreResolution(
-        stores: [ProductStore.sephora, ProductStore.trendyol],
-      );
-    }
-
-    // ============================================================
-    // GOLDEN ROSE
-    // ============================================================
-
-    if (normalizedBrand == 'golden rose' &&
-        normalizedProduct.contains('velvet matte') &&
-        _shadeMatches(normalizedShade, const ['02', 'no 02', 'no: 02'])) {
-      return const StoreResolution(
-        stores: [ProductStore.watsons, ProductStore.trendyol],
-        directLinks: {
-          ProductStore.watsons:
-              'https://www.watsons.com.tr/golden-rose-velvet-mat-ruj-no-02/p/BP_141000',
-        },
-      );
-    }
-
-    if (normalizedBrand == 'golden rose') {
-      return const StoreResolution(
-        stores: [ProductStore.watsons, ProductStore.trendyol],
-      );
-    }
-
-    // ============================================================
-    // MAYBELLINE
-    // ============================================================
-
-    if (_brandMatches(normalizedBrand, const [
-      'maybelline',
-      'maybelline new york',
-    ])) {
-      return const StoreResolution(
-        stores: [
-          ProductStore.trendyol,
-          ProductStore.gratis,
-          ProductStore.watsons,
-        ],
-      );
-    }
-
-    // ============================================================
-    // L'ORÉAL PARIS
-    // ============================================================
-
-    if (_brandMatches(normalizedBrand, const [
-      'loreal paris',
-      'l oreal paris',
-    ])) {
-      return const StoreResolution(
-        stores: [
-          ProductStore.trendyol,
-          ProductStore.gratis,
-          ProductStore.watsons,
-        ],
-      );
-    }
-
-    // ============================================================
-    // FLORMAR
-    // ============================================================
-
-    if (normalizedBrand == 'flormar') {
-      return const StoreResolution(
-        stores: [
-          ProductStore.trendyol,
-          ProductStore.gratis,
-          ProductStore.watsons,
-        ],
-      );
-    }
-
-    // ============================================================
-    // NYX
-    // ============================================================
-
-    if (_brandMatches(normalizedBrand, const [
-      'nyx',
-      'nyx professional makeup',
-    ])) {
-      return const StoreResolution(
-        stores: [ProductStore.trendyol, ProductStore.watsons],
-      );
-    }
-
-    // ============================================================
-    // NARS
-    // ============================================================
-
-    if (normalizedBrand == 'nars') {
-      return const StoreResolution(
-        stores: [ProductStore.sephora, ProductStore.trendyol],
-      );
-    }
-
-    // ============================================================
-    // FENTY BEAUTY
-    // ============================================================
-
-    if (normalizedBrand == 'fenty beauty') {
-      return const StoreResolution(
-        stores: [ProductStore.sephora, ProductStore.trendyol],
-      );
-    }
-
-    // ============================================================
-    // HUDA BEAUTY
-    // ============================================================
-
-    if (normalizedBrand == 'huda beauty') {
-      return const StoreResolution(
-        stores: [ProductStore.sephora, ProductStore.trendyol],
-      );
-    }
-
-    // ============================================================
-    // ESSENCE / CATRICE / WET N WILD
-    // ============================================================
-
-    if (normalizedBrand == 'essence') {
-      return const StoreResolution(
-        stores: [
-          ProductStore.trendyol,
-          ProductStore.gratis,
-          ProductStore.watsons,
-        ],
-      );
-    }
-
-    if (normalizedBrand == 'catrice') {
-      return const StoreResolution(
-        stores: [ProductStore.trendyol, ProductStore.gratis],
-      );
-    }
-
-    if (normalizedBrand == 'wet n wild') {
-      return const StoreResolution(
-        stores: [
-          ProductStore.trendyol,
-          ProductStore.gratis,
-          ProductStore.watsons,
-        ],
-      );
-    }
-
-    // ============================================================
-    // GÜVENLİ VARSAYILAN SONUÇ
+    // GÜVENLİ SONUÇ
     // ============================================================
     //
-    // Mağazası doğrulanmamış üründe yalnızca Trendyol gösterilir.
-    // ResultScreen zaten ayrıca Google'da Ara seçeneğini ekliyor.
+    // Mağaza listesi yalnızca gerçek doğrudan bağlantısı bulunan
+    // mağazalardan oluşturulur.
+    //
+    // Doğrudan bağlantı yoksa boş liste döner.
+    // ResultScreen yine Google'da Ara seçeneğini gösterecektir.
 
-    return const StoreResolution(stores: [ProductStore.trendyol]);
+    return StoreResolution(
+      stores: directLinks.keys.toList(),
+      directLinks: directLinks,
+    );
   }
 
-  static String _rareBeautyBlushLink(String normalizedShade) {
-    if (normalizedShade.contains('hope')) {
-      return 'https://www.sephora.com.tr/p/soft-pinch---likit-allik-577234.html';
-    }
-
-    if (normalizedShade.contains('virtue')) {
-      return 'https://www.sephora.com.tr/p/soft-pinch---likit-allik-651745.html';
-    }
-
-    if (normalizedShade.contains('grace')) {
-      return 'https://www.sephora.com.tr/p/soft-pinch---likit-allik-527975.html';
-    }
-
-    if (normalizedShade.contains('grateful')) {
-      return 'https://www.sephora.com.tr/p/soft-pinch---likit-allik-527974.html';
-    }
-
-    if (normalizedShade.contains('encourage')) {
-      return 'https://www.sephora.com.tr/p/soft-pinch---likit-allik-577236.html';
-    }
-
-    // Diğer renklerde ürün ailesinin Sephora sayfası.
-    return 'https://www.sephora.com.tr/p/soft-pinch---likit-allik-792445.html';
-  }
-
-  static bool _brandMatches(String normalizedBrand, List<String> values) {
-    return values.contains(normalizedBrand);
-  }
-
-  static bool _shadeMatches(String normalizedShade, List<String> values) {
-    for (final value in values) {
-      if (normalizedShade == value || normalizedShade.contains(value)) {
+  static bool _containsAny(String normalizedValue, List<String> candidates) {
+    for (final candidate in candidates) {
+      if (normalizedValue.contains(candidate)) {
         return true;
       }
     }

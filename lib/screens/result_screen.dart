@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+
 import '../services/product_link_service.dart';
 
 class ResultScreen extends StatelessWidget {

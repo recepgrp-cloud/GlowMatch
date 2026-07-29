@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -19,25 +17,24 @@ class _HomeScreenState extends State<HomeScreen> {
   final AIService _aiService = AIService();
 
   XFile? _selectedImage;
-  Uint8List? _selectedImageBytes;
-
   bool _isLoading = false;
   bool _isDarkMode = false;
 
   String _selectedLanguage = 'tr';
+  int _selectedTab = 0;
 
   bool get _isTurkish => _selectedLanguage == 'tr';
 
   Color get _backgroundColor =>
-      _isDarkMode ? const Color(0xFF111116) : const Color(0xFFF8F7FC);
+      _isDarkMode ? const Color(0xFF08070D) : const Color(0xFFFFF8FC);
 
-  Color get _cardColor => _isDarkMode ? const Color(0xFF1C1C24) : Colors.white;
+  Color get _cardColor => _isDarkMode ? const Color(0xFF17131F) : Colors.white;
 
   Color get _primaryTextColor =>
-      _isDarkMode ? Colors.white : const Color(0xFF20202A);
+      _isDarkMode ? const Color(0xFFF9F6FF) : const Color(0xFF21143D);
 
   Color get _secondaryTextColor =>
-      _isDarkMode ? Colors.grey.shade400 : Colors.grey.shade700;
+      _isDarkMode ? const Color(0xFFB9B0C7) : const Color(0xFF6F647A);
 
   Color get _borderColor =>
       _isDarkMode ? Colors.white.withValues(alpha: 0.10) : Colors.grey.shade200;
@@ -48,39 +45,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _pickFromCamera() async {
     final image = await _imageService.pickFromCamera();
-    await _setSelectedImage(image);
+    await _setSelectedImageAndAnalyze(image);
   }
 
   Future<void> _pickFromGallery() async {
     final image = await _imageService.pickFromGallery();
-    await _setSelectedImage(image);
+    await _setSelectedImageAndAnalyze(image);
   }
 
-  Future<void> _setSelectedImage(XFile? image) async {
-    if (image == null) {
+  Future<void> _setSelectedImageAndAnalyze(XFile? image) async {
+    if (image == null || _isLoading) {
       return;
     }
 
-    try {
-      final bytes = await image.readAsBytes();
+    setState(() {
+      _selectedImage = image;
+    });
 
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _selectedImage = image;
-        _selectedImageBytes = bytes;
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      _showMessage(
-        _text(tr: 'Fotoğraf okunamadı.', en: 'The photo could not be loaded.'),
-      );
-    }
+    await _analyzeImage();
   }
 
   Future<void> _analyzeImage() async {
@@ -131,17 +113,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _removeSelectedImage() {
-    if (_isLoading) {
-      return;
-    }
-
-    setState(() {
-      _selectedImage = null;
-      _selectedImageBytes = null;
-    });
-  }
-
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -155,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      backgroundColor: _cardColor,
+      backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.45),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -179,260 +150,269 @@ class _HomeScreenState extends State<HomeScreen> {
               setSheetState(() {});
             }
 
-            return SafeArea(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
-                  20,
-                  4,
-                  20,
-                  20 + MediaQuery.of(context).viewInsets.bottom,
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              decoration: BoxDecoration(
+                color: _cardColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(28),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF7C3AED), Color(0xFFDB2777)],
+              ),
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    4,
+                    20,
+                    20 + MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF7C3AED), Color(0xFFDB2777)],
+                              ),
+                              borderRadius: BorderRadius.circular(15),
                             ),
-                            borderRadius: BorderRadius.circular(15),
+                            child: const Icon(
+                              Icons.settings_outlined,
+                              color: Colors.white,
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.settings_outlined,
-                            color: Colors.white,
+                          const SizedBox(width: 13),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _text(tr: 'Ayarlar', en: 'Settings'),
+                                  style: TextStyle(
+                                    color: _primaryTextColor,
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  _text(
+                                    tr: 'GlowMatch deneyimini kişiselleştir.',
+                                    en: 'Personalize your GlowMatch experience.',
+                                  ),
+                                  style: TextStyle(
+                                    color: _secondaryTextColor,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      _settingsSectionTitle(
+                        _text(tr: 'Görünüm', en: 'Appearance'),
+                      ),
+                      const SizedBox(height: 9),
+                      _settingsContainer(
+                        child: _settingsSwitchTile(
+                          icon: _isDarkMode
+                              ? Icons.dark_mode_outlined
+                              : Icons.light_mode_outlined,
+                          title: _text(tr: 'Karanlık Mod', en: 'Dark Mode'),
+                          subtitle: _isDarkMode
+                              ? _text(
+                                  tr: 'Karanlık görünüm açık',
+                                  en: 'Dark appearance is enabled',
+                                )
+                              : _text(
+                                  tr: 'Aydınlık görünüm açık',
+                                  en: 'Light appearance is enabled',
+                                ),
+                          value: _isDarkMode,
+                          onChanged: updateDarkMode,
                         ),
-                        const SizedBox(width: 13),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      ),
+                      const SizedBox(height: 22),
+                      _settingsSectionTitle(_text(tr: 'Dil', en: 'Language')),
+                      const SizedBox(height: 9),
+                      _settingsContainer(
+                        child: Padding(
+                          padding: const EdgeInsets.all(15),
+                          child: Row(
                             children: [
-                              Text(
-                                _text(tr: 'Ayarlar', en: 'Settings'),
-                                style: TextStyle(
-                                  color: _primaryTextColor,
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w900,
+                              _settingsIcon(Icons.language_outlined),
+                              const SizedBox(width: 13),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _text(
+                                        tr: 'Uygulama Dili',
+                                        en: 'Application Language',
+                                      ),
+                                      style: TextStyle(
+                                        color: _primaryTextColor,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _text(
+                                        tr: 'Arayüzde kullanılacak dili seç.',
+                                        en: 'Choose the interface language.',
+                                      ),
+                                      style: TextStyle(
+                                        color: _secondaryTextColor,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                _text(
-                                  tr: 'GlowMatch deneyimini kişiselleştir.',
-                                  en: 'Personalize your GlowMatch experience.',
-                                ),
-                                style: TextStyle(
-                                  color: _secondaryTextColor,
-                                  fontSize: 13,
+                              const SizedBox(width: 10),
+                              DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _selectedLanguage,
+                                  dropdownColor: _cardColor,
+                                  icon: Icon(
+                                    Icons.keyboard_arrow_down,
+                                    color: _primaryTextColor,
+                                  ),
+                                  style: TextStyle(
+                                    color: _primaryTextColor,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'tr',
+                                      child: Text('Türkçe'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'en',
+                                      child: Text('English'),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      updateLanguage(value);
+                                    }
+                                  },
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _settingsSectionTitle(
-                      _text(tr: 'Görünüm', en: 'Appearance'),
-                    ),
-                    const SizedBox(height: 9),
-                    _settingsContainer(
-                      child: _settingsSwitchTile(
-                        icon: _isDarkMode
-                            ? Icons.dark_mode_outlined
-                            : Icons.light_mode_outlined,
-                        title: _text(tr: 'Karanlık Mod', en: 'Dark Mode'),
-                        subtitle: _isDarkMode
-                            ? _text(
-                                tr: 'Karanlık görünüm açık',
-                                en: 'Dark appearance is enabled',
-                              )
-                            : _text(
-                                tr: 'Aydınlık görünüm açık',
-                                en: 'Light appearance is enabled',
-                              ),
-                        value: _isDarkMode,
-                        onChanged: updateDarkMode,
                       ),
-                    ),
-                    const SizedBox(height: 22),
-                    _settingsSectionTitle(_text(tr: 'Dil', en: 'Language')),
-                    const SizedBox(height: 9),
-                    _settingsContainer(
-                      child: Padding(
-                        padding: const EdgeInsets.all(15),
-                        child: Row(
+                      const SizedBox(height: 22),
+                      _settingsSectionTitle(
+                        _text(tr: 'Uygulama', en: 'Application'),
+                      ),
+                      const SizedBox(height: 9),
+                      _settingsContainer(
+                        child: Column(
                           children: [
-                            _settingsIcon(Icons.language_outlined),
-                            const SizedBox(width: 13),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _text(
-                                      tr: 'Uygulama Dili',
-                                      en: 'Application Language',
-                                    ),
-                                    style: TextStyle(
-                                      color: _primaryTextColor,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _text(
-                                      tr: 'Arayüzde kullanılacak dili seç.',
-                                      en: 'Choose the interface language.',
-                                    ),
-                                    style: TextStyle(
-                                      color: _secondaryTextColor,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
+                            _settingsActionTile(
+                              icon: Icons.star_outline,
+                              title: _text(
+                                tr: 'Uygulamayı Değerlendir',
+                                en: 'Rate the App',
                               ),
+                              subtitle: _text(
+                                tr: 'GlowMatch için yorum bırak.',
+                                en: 'Leave a review for GlowMatch.',
+                              ),
+                              onTap: () {
+                                _showMessage(
+                                  _text(
+                                    tr: 'Değerlendirme özelliği Play Store sürümünde açılacak.',
+                                    en: 'Rating will be available in the Play Store version.',
+                                  ),
+                                );
+                              },
                             ),
-                            const SizedBox(width: 10),
-                            DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: _selectedLanguage,
-                                dropdownColor: _cardColor,
-                                icon: Icon(
-                                  Icons.keyboard_arrow_down,
-                                  color: _primaryTextColor,
-                                ),
-                                style: TextStyle(
-                                  color: _primaryTextColor,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'tr',
-                                    child: Text('Türkçe'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'en',
-                                    child: Text('English'),
-                                  ),
-                                ],
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    updateLanguage(value);
-                                  }
-                                },
+                            _settingsDivider(),
+                            _settingsActionTile(
+                              icon: Icons.privacy_tip_outlined,
+                              title: _text(
+                                tr: 'Gizlilik Politikası',
+                                en: 'Privacy Policy',
                               ),
+                              subtitle: _text(
+                                tr: 'Verilerin nasıl kullanıldığını incele.',
+                                en: 'Review how your data is used.',
+                              ),
+                              onTap: () {
+                                _showInformationDialog(
+                                  title: _text(
+                                    tr: 'Gizlilik Politikası',
+                                    en: 'Privacy Policy',
+                                  ),
+                                  message: _text(
+                                    tr: 'GlowMatch, seçtiğin fotoğrafı yalnızca kişiselleştirilmiş analiz oluşturmak için kullanır. Play Store yayını öncesinde ayrıntılı gizlilik politikası bu bölüme eklenecektir.',
+                                    en: 'GlowMatch uses your selected photo only to create a personalized analysis. A detailed privacy policy will be added before the Play Store release.',
+                                  ),
+                                );
+                              },
+                            ),
+                            _settingsDivider(),
+                            _settingsActionTile(
+                              icon: Icons.info_outline,
+                              title: _text(
+                                tr: 'GlowMatch Hakkında',
+                                en: 'About GlowMatch',
+                              ),
+                              subtitle: 'GlowMatch AI • Beta v0.5',
+                              onTap: () {
+                                _showInformationDialog(
+                                  title: _text(
+                                    tr: 'GlowMatch Hakkında',
+                                    en: 'About GlowMatch',
+                                  ),
+                                  message: _text(
+                                    tr: 'GlowMatch, yüz ve cilt tonu analizine göre kişiselleştirilmiş makyaj ürünü önerileri sunan yapay zekâ destekli bir güzellik asistanıdır.',
+                                    en: 'GlowMatch is an AI-powered beauty assistant that provides personalized makeup recommendations based on facial and skin tone analysis.',
+                                  ),
+                                );
+                              },
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 22),
-                    _settingsSectionTitle(
-                      _text(tr: 'Uygulama', en: 'Application'),
-                    ),
-                    const SizedBox(height: 9),
-                    _settingsContainer(
-                      child: Column(
-                        children: [
-                          _settingsActionTile(
-                            icon: Icons.star_outline,
-                            title: _text(
-                              tr: 'Uygulamayı Değerlendir',
-                              en: 'Rate the App',
+                      const SizedBox(height: 22),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 49,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF7C3AED),
+                            side: BorderSide(
+                              color: const Color(
+                                0xFF7C3AED,
+                              ).withValues(alpha: 0.30),
                             ),
-                            subtitle: _text(
-                              tr: 'GlowMatch için yorum bırak.',
-                              en: 'Leave a review for GlowMatch.',
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
                             ),
-                            onTap: () {
-                              _showMessage(
-                                _text(
-                                  tr: 'Değerlendirme özelliği Play Store sürümünde açılacak.',
-                                  en: 'Rating will be available in the Play Store version.',
-                                ),
-                              );
-                            },
                           ),
-                          _settingsDivider(),
-                          _settingsActionTile(
-                            icon: Icons.privacy_tip_outlined,
-                            title: _text(
-                              tr: 'Gizlilik Politikası',
-                              en: 'Privacy Policy',
-                            ),
-                            subtitle: _text(
-                              tr: 'Verilerin nasıl kullanıldığını incele.',
-                              en: 'Review how your data is used.',
-                            ),
-                            onTap: () {
-                              _showInformationDialog(
-                                title: _text(
-                                  tr: 'Gizlilik Politikası',
-                                  en: 'Privacy Policy',
-                                ),
-                                message: _text(
-                                  tr: 'GlowMatch, seçtiğin fotoğrafı yalnızca kişiselleştirilmiş analiz oluşturmak için kullanır. Play Store yayını öncesinde ayrıntılı gizlilik politikası bu bölüme eklenecektir.',
-                                  en: 'GlowMatch uses your selected photo only to create a personalized analysis. A detailed privacy policy will be added before the Play Store release.',
-                                ),
-                              );
-                            },
-                          ),
-                          _settingsDivider(),
-                          _settingsActionTile(
-                            icon: Icons.info_outline,
-                            title: _text(
-                              tr: 'GlowMatch Hakkında',
-                              en: 'About GlowMatch',
-                            ),
-                            subtitle: 'GlowMatch AI • Beta v0.5',
-                            onTap: () {
-                              _showInformationDialog(
-                                title: _text(
-                                  tr: 'GlowMatch Hakkında',
-                                  en: 'About GlowMatch',
-                                ),
-                                message: _text(
-                                  tr: 'GlowMatch, yüz ve cilt tonu analizine göre kişiselleştirilmiş makyaj ürünü önerileri sunan yapay zekâ destekli bir güzellik asistanıdır.',
-                                  en: 'GlowMatch is an AI-powered beauty assistant that provides personalized makeup recommendations based on facial and skin tone analysis.',
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 49,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(sheetContext);
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF7C3AED),
-                          side: BorderSide(
-                            color: const Color(
-                              0xFF7C3AED,
-                            ).withValues(alpha: 0.30),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
+                          child: Text(
+                            _text(tr: 'Kapat', en: 'Close'),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),
-                        child: Text(
-                          _text(tr: 'Kapat', en: 'Close'),
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -450,7 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: _cardColor,
+          backgroundColor: Colors.transparent,
           title: Text(
             title,
             style: TextStyle(
@@ -611,532 +591,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Divider(height: 1, indent: 69, color: _borderColor);
   }
 
-  Widget _buildHeader() {
-    return Column(
-      children: [
-        Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
-            ),
-            borderRadius: BorderRadius.circular(23),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF7C3AED).withValues(alpha: 0.24),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: const Icon(Icons.auto_awesome, size: 36, color: Colors.white),
-        ),
-        const SizedBox(height: 18),
-        Text(
-          _text(
-            tr: 'Sana Uygun Renkleri Keşfet',
-            en: 'Discover Your Perfect Colors',
-          ),
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: _primaryTextColor,
-            fontSize: 27,
-            height: 1.15,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          _text(
-            tr: 'Fotoğrafını yükle, yapay zekâ cilt tonunu analiz etsin ve sana uygun makyaj ürünlerini önersin.',
-            en: 'Upload your photo and let AI analyze your skin tone and recommend suitable makeup products.',
-          ),
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 14,
-            height: 1.5,
-            color: _secondaryTextColor,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildImageArea() {
-    final hasImage = _selectedImageBytes != null;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: double.infinity,
-      height: hasImage ? 360 : 285,
-      decoration: BoxDecoration(
-        color: _cardColor,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: hasImage
-              ? const Color(0xFF7C3AED).withValues(alpha: 0.35)
-              : _borderColor,
-          width: 1.4,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDarkMode ? 0.25 : 0.06),
-            blurRadius: 30,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(27),
-              child: hasImage
-                  ? Image.memory(
-                      _selectedImageBytes!,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                    )
-                  : _buildEmptyImageState(),
-            ),
-          ),
-          if (hasImage)
-            Positioned(
-              top: 14,
-              right: 14,
-              child: Material(
-                color: Colors.black.withValues(alpha: 0.62),
-                borderRadius: BorderRadius.circular(30),
-                child: InkWell(
-                  onTap: _removeSelectedImage,
-                  borderRadius: BorderRadius.circular(30),
-                  child: const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: Icon(Icons.close, size: 21, color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-          if (hasImage)
-            Positioned(
-              left: 14,
-              bottom: 14,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.62),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.check_circle,
-                      size: 18,
-                      color: Color(0xFF86EFAC),
-                    ),
-                    const SizedBox(width: 7),
-                    Text(
-                      _text(tr: 'Fotoğraf hazır', en: 'Photo ready'),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyImageState() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: _isDarkMode
-              ? const [Color(0xFF221B30), Color(0xFF281B26)]
-              : const [Color(0xFFF5F3FF), Color(0xFFFDF2F8)],
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(26),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 102,
-              height: 102,
-              decoration: BoxDecoration(
-                color: _cardColor.withValues(alpha: 0.90),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: const Color(0xFF7C3AED).withValues(alpha: 0.14),
-                ),
-              ),
-              child: const Icon(
-                Icons.face_retouching_natural,
-                size: 57,
-                color: Color(0xFF7C3AED),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              _text(tr: 'Fotoğrafını ekle', en: 'Add your photo'),
-              style: TextStyle(
-                color: _primaryTextColor,
-                fontSize: 19,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              _text(
-                tr: 'İyi ışıkta çekilmiş, yüzünün net göründüğü bir fotoğraf kullan.',
-                en: 'Use a well-lit photo where your face is clearly visible.',
-              ),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.45,
-                color: _secondaryTextColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPhotoButtons() {
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 56,
-            child: FilledButton.icon(
-              onPressed: _isLoading ? null : _pickFromCamera,
-              icon: const Icon(Icons.camera_alt_outlined),
-              label: Text(_text(tr: 'Kamera', en: 'Camera')),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF7C3AED),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(17),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: SizedBox(
-            height: 56,
-            child: OutlinedButton.icon(
-              onPressed: _isLoading ? null : _pickFromGallery,
-              icon: const Icon(Icons.photo_library_outlined),
-              label: Text(_text(tr: 'Galeri', en: 'Gallery')),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF7C3AED),
-                side: BorderSide(
-                  color: const Color(0xFF7C3AED).withValues(alpha: 0.35),
-                  width: 1.3,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(17),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAnalyzeButton() {
-    final hasImage = _selectedImage != null;
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
-      child: !hasImage
-          ? const SizedBox.shrink()
-          : SizedBox(
-              key: const ValueKey('analyze-button'),
-              width: double.infinity,
-              height: 60,
-              child: FilledButton(
-                onPressed: _isLoading ? null : _analyzeImage,
-                style: FilledButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  backgroundColor: const Color(0xFF7C3AED),
-                  disabledBackgroundColor: const Color(
-                    0xFF7C3AED,
-                  ).withValues(alpha: 0.55),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(19),
-                  ),
-                ),
-                child: Ink(
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF7C3AED), Color(0xFFDB2777)],
-                    ),
-                    borderRadius: BorderRadius.circular(19),
-                  ),
-                  child: Container(
-                    alignment: Alignment.center,
-                    child: _isLoading
-                        ? Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const SizedBox(
-                                width: 21,
-                                height: 21,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                _text(
-                                  tr: 'Analiz ediliyor...',
-                                  en: 'Analyzing...',
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          )
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.auto_awesome,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                _text(
-                                  tr: 'AI Analizi Başlat',
-                                  en: 'Start AI Analysis',
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-              ),
-            ),
-    );
-  }
-
-  Widget _buildAnalysisInfo() {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
-      child: !_isLoading
-          ? const SizedBox.shrink()
-          : Container(
-              key: const ValueKey('loading-info'),
-              width: double.infinity,
-              padding: const EdgeInsets.all(17),
-              decoration: BoxDecoration(
-                color: const Color(0xFF7C3AED).withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: const Color(0xFF7C3AED).withValues(alpha: 0.15),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 43,
-                    height: 43,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.face_retouching_natural,
-                      color: Color(0xFF7C3AED),
-                    ),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _text(
-                            tr: 'GlowMatch seni analiz ediyor',
-                            en: 'GlowMatch is analyzing you',
-                          ),
-                          style: TextStyle(
-                            color: _primaryTextColor,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _text(
-                            tr: 'Cilt tonu, alt ton ve ürün uyumları hazırlanıyor.',
-                            en: 'Skin tone, undertone and product matches are being prepared.',
-                          ),
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.4,
-                            color: _secondaryTextColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-    );
-  }
-
-  Widget _buildTipsCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _cardColor,
-        borderRadius: BorderRadius.circular(21),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.tips_and_updates_outlined,
-                color: Color(0xFFDB2777),
-              ),
-              const SizedBox(width: 9),
-              Text(
-                _text(tr: 'Daha iyi analiz için', en: 'For a better analysis'),
-                style: TextStyle(
-                  color: _primaryTextColor,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _buildTipRow(
-            _text(
-              tr: 'Yüzün doğrudan kameraya dönük olsun.',
-              en: 'Face the camera directly.',
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildTipRow(
-            _text(
-              tr: 'Doğal veya dengeli bir ışık kullan.',
-              en: 'Use natural or balanced lighting.',
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildTipRow(
-            _text(
-              tr: 'Filtreli ve aşırı karanlık fotoğraflardan kaçın.',
-              en: 'Avoid filtered or overly dark photos.',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTipRow(String text) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            color: const Color(0xFF22C55E).withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.check, size: 15, color: Color(0xFF16A34A)),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.45,
-              color: _secondaryTextColor,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAiBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFF7C3AED).withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
-        ),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome, size: 16, color: Color(0xFF7C3AED)),
-          SizedBox(width: 5),
-          Text(
-            'AI',
-            style: TextStyle(
-              color: Color(0xFF7C3AED),
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSettingsButton() {
     return Material(
       color: _isDarkMode ? Colors.white.withValues(alpha: 0.07) : Colors.white,
@@ -1161,70 +615,831 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _showPhotoSourceSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.48),
+      builder: (sheetContext) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          decoration: BoxDecoration(
+            color: _cardColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border.all(color: _borderColor),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: _secondaryTextColor.withValues(alpha: 0.28),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  _text(
+                    tr: 'Fotoğraf kaynağını seç',
+                    en: 'Choose a photo source',
+                  ),
+                  style: TextStyle(
+                    color: _primaryTextColor,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _sourceButton(
+                        icon: Icons.camera_alt_outlined,
+                        title: _text(tr: 'Kamera', en: 'Camera'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _pickFromCamera();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _sourceButton(
+                        icon: Icons.photo_library_outlined,
+                        title: _text(tr: 'Galeri', en: 'Gallery'),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _pickFromGallery();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sourceButton({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: const Color(0xFF7C3AED).withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            children: [
+              Icon(icon, color: const Color(0xFF8B5CF6), size: 30),
+              const SizedBox(height: 9),
+              Text(
+                title,
+                style: TextStyle(
+                  color: _primaryTextColor,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrandMark() {
+    return Container(
+      width: 46,
+      height: 46,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF8B5CF6).withValues(alpha: 0.32),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: Image.asset(
+          'assets/branding/glowmatch_icon.png',
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroDashboard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 194,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 0,
+                top: 20,
+                width: 210,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [
+                          Color(0xFF5B21B6),
+                          Color(0xFFD946EF),
+                          Color(0xFFEC4899),
+                        ],
+                      ).createShader(bounds),
+                      child: Text(
+                        _text(
+                          tr: 'Kendi tonunu\nkeşfet',
+                          en: 'Discover your\nperfect tone',
+                        ),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'serif',
+                          fontSize: 35,
+                          height: 0.96,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 13),
+                    Text(
+                      _text(
+                        tr: 'Cildine en uygun makyajı bul,\nher gün ışılda.',
+                        en: 'Find makeup made for your skin,\nand glow every day.',
+                      ),
+                      style: TextStyle(
+                        color: _secondaryTextColor,
+                        fontSize: 13,
+                        height: 1.45,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                right: -4,
+                top: 2,
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.0012)
+                    ..rotateY(-0.12)
+                    ..rotateX(0.05),
+                  child: Container(
+                    width: 166,
+                    height: 166,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(42),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: _isDarkMode
+                            ? const [
+                                Color(0xFF5B21B6),
+                                Color(0xFF241036),
+                                Color(0xFF12071D),
+                              ]
+                            : const [
+                                Color(0xFFF8E8FF),
+                                Color(0xFFD8B4FE),
+                                Color(0xFFF9A8D4),
+                              ],
+                      ),
+                      border: Border.all(
+                        color: Colors.white.withValues(
+                          alpha: _isDarkMode ? 0.18 : 0.55,
+                        ),
+                        width: 1.4,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: _isDarkMode ? 0.56 : 0.20,
+                          ),
+                          blurRadius: 24,
+                          offset: const Offset(13, 18),
+                        ),
+                        BoxShadow(
+                          color: const Color(
+                            0xFFD946EF,
+                          ).withValues(alpha: _isDarkMode ? 0.42 : 0.27),
+                          blurRadius: 36,
+                          spreadRadius: 2,
+                          offset: const Offset(-8, -7),
+                        ),
+                        BoxShadow(
+                          color: Colors.white.withValues(
+                            alpha: _isDarkMode ? 0.10 : 0.65,
+                          ),
+                          blurRadius: 12,
+                          offset: const Offset(-7, -8),
+                        ),
+                      ],
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(34),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: _isDarkMode ? 0.30 : 0.13,
+                            ),
+                            blurRadius: 12,
+                            offset: const Offset(5, 8),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(34),
+                        child: Image.asset(
+                          'assets/branding/glowmatch_icon.png',
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        _premiumActionCard(
+          icon: Icons.camera_alt_outlined,
+          title: _text(tr: 'Cildimi Analiz Et', en: 'Analyze My Skin'),
+          subtitle: _text(
+            tr: 'Fotoğraftan sana özel\ntonları keşfet',
+            en: 'Discover tones made for you\nfrom a photo',
+          ),
+          onTap: _showPhotoSourceSheet,
+          accent: const Color(0xFF7C3AED),
+        ),
+        const SizedBox(height: 12),
+        _premiumActionCard(
+          icon: Icons.colorize_outlined,
+          title: _text(tr: 'Tonumu Dönüştür', en: 'Convert My Shade'),
+          subtitle: _text(
+            tr: 'Kullandığın fondöteni\nbaşka markalarda bul',
+            en: 'Find your foundation shade\nin other brands',
+          ),
+          onTap: () {
+            _showMessage(
+              _text(
+                tr: 'Ton dönüştürme özelliği yakında açılacak.',
+                en: 'Shade conversion is coming soon.',
+              ),
+            );
+          },
+          accent: const Color(0xFFD946EF),
+        ),
+        const SizedBox(height: 12),
+        _premiumActionCard(
+          icon: Icons.folder_special_outlined,
+          title: _text(tr: 'Kayıtlı Görünümlerim', en: 'Saved Looks'),
+          subtitle: _text(
+            tr: 'Geçmiş analizlerini ve\nfavorilerini incele',
+            en: 'Review previous analyses\nand favorites',
+          ),
+          onTap: () {
+            _showMessage(
+              _text(
+                tr: 'Kayıtlı görünümler bölümü yakında açılacak.',
+                en: 'Saved looks are coming soon.',
+              ),
+            );
+          },
+          accent: const Color(0xFF8B5CF6),
+        ),
+      ],
+    );
+  }
+
+  Widget _premiumActionCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    required Color accent,
+  }) {
+    final cardColor = _isDarkMode
+        ? const Color(0xFF17131F).withValues(alpha: 0.96)
+        : Colors.white.withValues(alpha: 0.92);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          height: 104,
+          padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 14),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: _isDarkMode
+                  ? accent.withValues(alpha: 0.46)
+                  : const Color(0xFFE7D9F7),
+              width: 1.1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: _isDarkMode ? 0.38 : 0.10,
+                ),
+                blurRadius: 18,
+                offset: const Offset(7, 11),
+              ),
+              BoxShadow(
+                color: Colors.white.withValues(
+                  alpha: _isDarkMode ? 0.035 : 0.72,
+                ),
+                blurRadius: 10,
+                offset: const Offset(-5, -6),
+              ),
+              BoxShadow(
+                color: _isDarkMode
+                    ? accent.withValues(alpha: 0.20)
+                    : const Color(0xFFD8B4FE).withValues(alpha: 0.22),
+                blurRadius: 26,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 62,
+                height: 62,
+                decoration: BoxDecoration(
+                  color: _isDarkMode
+                      ? accent.withValues(alpha: 0.13)
+                      : const Color(0xFFF4EAFF),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: accent.withValues(alpha: _isDarkMode ? 0.58 : 0.22),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(
+                        alpha: _isDarkMode ? 0.28 : 0.13,
+                      ),
+                      blurRadius: 20,
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: accent, size: 29),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: _primaryTextColor,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: _secondaryTextColor,
+                        fontSize: 12.4,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.11),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: accent.withValues(alpha: 0.18)),
+                ),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  color: accent,
+                  size: 25,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDailyRecommendation() {
+    return Container(
+      width: double.infinity,
+      height: 154,
+      padding: const EdgeInsets.fromLTRB(17, 15, 14, 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: _isDarkMode
+              ? const [Color(0xFF3B1F2B), Color(0xFF17131F)]
+              : const [Color(0xFFFFF8FB), Color(0xFFFFEDF5)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: _isDarkMode
+              ? const Color(0xFFF472B6).withValues(alpha: 0.48)
+              : const Color(0xFFF8C9DF),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(
+              0xFFEC4899,
+            ).withValues(alpha: _isDarkMode ? 0.16 : 0.09),
+            blurRadius: 24,
+            offset: const Offset(0, 11),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEC4899).withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.auto_awesome,
+                    size: 15,
+                    color: Color(0xFFEC4899),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    _text(tr: 'Bugünün Önerisi', en: 'Today’s Pick'),
+                    style: const TextStyle(
+                      color: Color(0xFFDB2777),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            bottom: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _text(tr: 'Sana Özel Ton', en: 'Your Perfect Shade'),
+                  style: TextStyle(color: _secondaryTextColor, fontSize: 11.5),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Nude Beige 23',
+                  style: TextStyle(
+                    color: _primaryTextColor,
+                    fontFamily: 'serif',
+                    fontSize: 23,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isDarkMode
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : Colors.white.withValues(alpha: 0.82),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: _borderColor),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_rounded,
+                        size: 15,
+                        color: Color(0xFF8B5CF6),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _text(tr: 'Nötr alt ton', en: 'Neutral undertone'),
+                        style: TextStyle(
+                          color: _secondaryTextColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            right: 12,
+            top: 32,
+            child: Transform.rotate(
+              angle: -0.12,
+              child: Container(
+                width: 132,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFFF2C39B),
+                      Color(0xFFE9A978),
+                      Color(0xFFD88F60),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(42),
+                    bottomLeft: Radius.circular(42),
+                    topRight: Radius.circular(8),
+                    bottomRight: Radius.circular(22),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFE9A978).withValues(alpha: 0.30),
+                      blurRadius: 17,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 18,
+            bottom: 4,
+            child: Container(
+              width: 70,
+              height: 58,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _isDarkMode
+                    ? const Color(0xFF3A2638)
+                    : const Color(0xFFFFF2E7),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: const Color(0xFFF3C4D7).withValues(alpha: 0.45),
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '%92',
+                    style: TextStyle(
+                      color: _isDarkMode
+                          ? const Color(0xFFF9A8D4)
+                          : const Color(0xFFBE185D),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    _text(tr: 'UYUMLULUK', en: 'MATCH'),
+                    style: TextStyle(
+                      color: _secondaryTextColor,
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomNavigation() {
+    return SafeArea(
+      minimum: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      child: Container(
+        height: 66,
+        decoration: BoxDecoration(
+          color: _isDarkMode
+              ? const Color(0xFF15121D).withValues(alpha: 0.98)
+              : Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: _isDarkMode
+                ? const Color(0xFF6D4A7E)
+                : const Color(0xFFE8DDF1),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: _isDarkMode ? 0.32 : 0.08),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            _navItem(
+              index: 0,
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home_rounded,
+              label: _text(tr: 'Ana Sayfa', en: 'Home'),
+            ),
+            _navItem(
+              index: 1,
+              icon: Icons.bar_chart_outlined,
+              selectedIcon: Icons.bar_chart_rounded,
+              label: _text(tr: 'Analizlerim', en: 'Analyses'),
+            ),
+            _navItem(
+              index: 2,
+              icon: Icons.favorite_border_rounded,
+              selectedIcon: Icons.favorite_rounded,
+              label: _text(tr: 'Favoriler', en: 'Favorites'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navItem({
+    required int index,
+    required IconData icon,
+    required IconData selectedIcon,
+    required String label,
+  }) {
+    final selected = _selectedTab == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedTab = index;
+          });
+          if (index != 0) {
+            _showMessage(
+              index == 1
+                  ? _text(
+                      tr: 'Analizlerim bölümü yakında açılacak.',
+                      en: 'Analyses are coming soon.',
+                    )
+                  : _text(
+                      tr: 'Favoriler bölümü yakında açılacak.',
+                      en: 'Favorites are coming soon.',
+                    ),
+            );
+          }
+        },
+        borderRadius: BorderRadius.circular(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              selected ? selectedIcon : icon,
+              color: selected ? const Color(0xFFD946EF) : _secondaryTextColor,
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? const Color(0xFFD946EF) : _secondaryTextColor,
+                fontSize: 10.5,
+                fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final backgroundGradient = _isDarkMode
+        ? const [Color(0xFF06050A), Color(0xFF0D0913), Color(0xFF09070D)]
+        : const [Color(0xFFFFFBFD), Color(0xFFFFF5FB), Color(0xFFF8F1FF)];
+
     return Scaffold(
       backgroundColor: _backgroundColor,
+      extendBody: false,
       appBar: AppBar(
-        backgroundColor: _backgroundColor,
+        backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        centerTitle: false,
-        titleSpacing: 20,
+        titleSpacing: 18,
+        toolbarHeight: 70,
         title: Row(
           children: [
-            const Icon(Icons.auto_awesome, color: Color(0xFF7C3AED), size: 23),
-            const SizedBox(width: 8),
+            _buildBrandMark(),
+            const SizedBox(width: 10),
             Text(
               'GlowMatch',
               style: TextStyle(
                 color: _primaryTextColor,
-                fontSize: 21,
+                fontSize: 20,
                 fontWeight: FontWeight.w900,
-                letterSpacing: -0.4,
+                letterSpacing: -0.5,
               ),
             ),
           ],
         ),
         actions: [
-          Center(child: _buildAiBadge()),
-          const SizedBox(width: 8),
           Center(child: _buildSettingsButton()),
           const SizedBox(width: 16),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 35),
-          child: Column(
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 28),
-              _buildImageArea(),
-              const SizedBox(height: 17),
-              _buildPhotoButtons(),
-              const SizedBox(height: 16),
-              _buildAnalyzeButton(),
-              if (_selectedImage != null) const SizedBox(height: 15),
-              _buildAnalysisInfo(),
-              if (_isLoading) const SizedBox(height: 17),
-              _buildTipsCard(),
-              const SizedBox(height: 22),
-              Text(
-                _text(
-                  tr: 'Fotoğraf yalnızca kişiselleştirilmiş analiz oluşturmak için kullanılır.',
-                  en: 'Your photo is used only to create a personalized analysis.',
-                ),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _secondaryTextColor,
-                  fontSize: 11,
-                  height: 1.4,
-                ),
-              ),
-            ],
+      bottomNavigationBar: _buildBottomNavigation(),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: backgroundGradient,
           ),
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              top: -80,
+              right: -110,
+              child: _ambientGlow(const Color(0xFFB76EFF), 245),
+            ),
+            Positioned(
+              top: 260,
+              left: -130,
+              child: _ambientGlow(const Color(0xFFFF7AB8), 265),
+            ),
+            SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              child: Column(
+                children: [
+                  _buildHeroDashboard(),
+                  const SizedBox(height: 14),
+                  _buildDailyRecommendation(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ambientGlow(Color color, double size) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: _isDarkMode ? 0.08 : 0.13),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: _isDarkMode ? 0.16 : 0.20),
+              blurRadius: 95,
+              spreadRadius: 30,
+            ),
+          ],
         ),
       ),
     );

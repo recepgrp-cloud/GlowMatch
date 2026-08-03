@@ -1,5 +1,6 @@
 import 'store_mapper.dart';
 import '../data/product_catalog.dart';
+import '../data/catalog/makeup_product.dart';
 
 class ProductMatcher {
   Map<String, dynamic> enrichResult(Map<String, dynamic> result) {
@@ -167,6 +168,13 @@ class ProductMatcher {
       ...product.storeLinks,
     };
 
+    // Doğrudan Watsons / Gratis / Sephora vb. bağlantılar korunur.
+    // Trendyol ise her ürün için genel arama bağlantısı olarak eklenir.
+    resolvedLinks.putIfAbsent(
+      ProductStore.trendyol,
+      () => _buildTrendyolSearchLink(product),
+    );
+
     final safeLinks = <ProductStore, String>{
       for (final entry in resolvedLinks.entries)
         if (_isValidDirectProductLink(entry.value))
@@ -191,8 +199,24 @@ class ProductMatcher {
       'matchScore': match.score,
       'matchReason': match.reason,
       'stores': resolvedStores.map((store) => store.name).toList(),
-      'storeLinks': safeLinks.map((store, link) => MapEntry(store.name, link)),
+      'storeLinks': safeLinks.map(
+        (store, link) => MapEntry(store.name, link),
+      ),
     };
+  }
+
+  String _buildTrendyolSearchLink(MakeupProduct product) {
+    final query = [
+      product.brand,
+      product.product,
+      product.shade,
+    ].where((value) => value.trim().isNotEmpty).join(' ');
+
+    return Uri.https(
+      'www.trendyol.com',
+      '/sr',
+      {'q': query},
+    ).toString();
   }
 
   bool _isValidDirectProductLink(String link) {

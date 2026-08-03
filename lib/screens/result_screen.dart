@@ -1,45 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import '../services/product_link_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ResultScreen extends StatelessWidget {
   final Map<String, dynamic> result;
+  final bool isDarkMode;
+  final String language;
 
-  const ResultScreen({super.key, required this.result});
+  const ResultScreen({
+    super.key,
+    required this.result,
+    this.isDarkMode = false,
+    this.language = 'tr',
+  });
 
-  String _value(String key) {
+  bool get _isTurkish => language == 'tr';
+
+  Color get _backgroundColor =>
+      isDarkMode ? const Color(0xFF08070D) : const Color(0xFFFFF8FC);
+
+  Color get _cardColor =>
+      isDarkMode ? const Color(0xFF17131F) : Colors.white;
+
+  Color get _primaryTextColor =>
+      isDarkMode ? const Color(0xFFF9F6FF) : const Color(0xFF21143D);
+
+  Color get _secondaryTextColor =>
+      isDarkMode ? const Color(0xFFB9B0C7) : const Color(0xFF6F647A);
+
+  Color get _borderColor => isDarkMode
+      ? Colors.white.withValues(alpha: 0.10)
+      : const Color(0xFFEDE7F3);
+
+  String _text({required String tr, required String en}) {
+    return _isTurkish ? tr : en;
+  }
+
+  String _value(String key, {String? fallback}) {
     final value = result[key];
 
     if (value == null || value.toString().trim().isEmpty) {
-      return 'Belirsiz';
+      return fallback ?? _text(tr: 'Belirsiz', en: 'Unclear');
     }
 
     return value.toString().trim();
-  }
-
-  String _itemValue(
-    Map<String, dynamic> item,
-    String key, {
-    String fallback = '',
-  }) {
-    final value = item[key];
-
-    if (value == null || value.toString().trim().isEmpty) {
-      return fallback;
-    }
-
-    return value.toString().trim();
-  }
-
-  bool _itemBool(Map<String, dynamic> item, String key) {
-    final value = item[key];
-
-    if (value is bool) {
-      return value;
-    }
-
-    return value?.toString().toLowerCase() == 'true';
   }
 
   List<Map<String, dynamic>> _recommendations(
@@ -60,449 +64,212 @@ class ResultScreen extends StatelessWidget {
       }
     }
 
+    final fallbackBrand = _value(fallbackBrandKey, fallback: '');
+    final fallbackShade = _value(fallbackCodeKey, fallback: '');
+
+    if (fallbackBrand.isEmpty && fallbackShade.isEmpty) {
+      return [];
+    }
+
     return [
       {
-        'brand': _value(fallbackBrandKey),
+        'brand': fallbackBrand,
         'product': '',
-        'shade': _value(fallbackCodeKey),
+        'shade': fallbackShade,
       },
     ];
   }
 
-  int _matchScore(Map<String, dynamic> item) {
-    final value = item['matchScore'];
+  String _recommendationValue(
+    Map<String, dynamic> recommendation,
+    String key, {
+    String fallback = '',
+  }) {
+    final value = recommendation[key];
+
+    if (value == null || value.toString().trim().isEmpty) {
+      return fallback;
+    }
+
+    return value.toString().trim();
+  }
+
+  bool _recommendationBool(
+    Map<String, dynamic> recommendation,
+    String key,
+  ) {
+    final value = recommendation[key];
+
+    if (value is bool) {
+      return value;
+    }
+
+    return value.toString().toLowerCase() == 'true';
+  }
+
+  int _matchScore(Map<String, dynamic> recommendation) {
+    final value = recommendation['matchScore'];
 
     if (value is num) {
-      return value.toInt().clamp(0, 100);
+      return value.toInt().clamp(0, 100).toInt();
     }
 
-    return (int.tryParse(value?.toString() ?? '') ?? 0).clamp(0, 100);
+    return int.tryParse(value?.toString() ?? '')?.clamp(0, 100).toInt() ?? 0;
   }
 
-  List<String> _matchReasons(Map<String, dynamic> item) {
-    final reason = _itemValue(
-      item,
-      'matchReason',
-      fallback: 'Genel ürün özelliklerine göre önerildi',
-    );
+  Map<String, String> _storeLinks(Map<String, dynamic> recommendation) {
+    final value = recommendation['storeLinks'];
 
-    return reason
-        .split(',')
-        .map((text) => text.trim())
-        .where((text) => text.isNotEmpty)
-        .map((text) => '${text[0].toUpperCase()}${text.substring(1)}')
-        .toList();
+    if (value is! Map) {
+      return {};
+    }
+
+    return {
+      for (final entry in value.entries)
+        if (entry.key.toString().trim().isNotEmpty &&
+            entry.value.toString().trim().isNotEmpty)
+          entry.key.toString().trim().toLowerCase():
+              entry.value.toString().trim(),
+    };
   }
 
-  Color _matchScoreColor(int score) {
-    if (score >= 85) {
-      return Colors.green;
-    }
-
-    if (score >= 70) {
-      return Colors.orange;
-    }
-
-    if (score > 0) {
-      return Colors.deepOrange;
-    }
-
-    return Colors.grey;
-  }
-
-  String _priceText(Map<String, dynamic> item) {
-    final value = item['averagePrice'];
-
+  String _priceText(Map<String, dynamic> recommendation) {
+    final value = recommendation['averagePrice'];
     final price = value is num
         ? value.toInt()
         : int.tryParse(value?.toString() ?? '');
 
     if (price == null || price <= 0) {
-      return 'Fiyat bilgisi yok';
+      return _text(tr: 'Fiyat bilgisi yok', en: 'Price unavailable');
     }
 
-    return 'Yaklaşık $price TL';
+    return _text(tr: 'Yaklaşık $price TL', en: 'Approx. $price TRY');
   }
 
-  String _priceSegment(Map<String, dynamic> item, int index) {
-    final value = item['priceSegment']?.toString().trim().toLowerCase();
+  String _priceSegmentText(
+    Map<String, dynamic> recommendation,
+    int index,
+  ) {
+    final value = recommendation['priceSegment']
+        ?.toString()
+        .trim()
+        .toLowerCase();
 
     if (value != null) {
       if (value.contains('premium')) {
-        return 'Premium';
+        return _text(tr: 'Premium', en: 'Premium');
       }
 
       if (value.contains('ekonomik') || value.contains('budget')) {
-        return 'Ekonomik';
+        return _text(tr: 'Ekonomik', en: 'Budget');
       }
 
       if (value.contains('orta') || value.contains('mid')) {
-        return 'Orta Segment';
+        return _text(tr: 'Orta Segment', en: 'Mid-range');
       }
     }
 
     return switch (index) {
-      0 => 'Ana Öneri',
-      1 => 'Alternatif',
-      _ => 'Diğer Alternatif',
+      0 => _text(tr: 'Ana Öneri', en: 'Top Match'),
+      1 => _text(tr: 'Alternatif', en: 'Alternative'),
+      _ => _text(tr: 'Diğer Alternatif', en: 'Another Option'),
     };
   }
 
   Color _segmentColor(String segment) {
-    return switch (segment) {
-      'Premium' => Colors.deepPurple,
-      'Ekonomik' => Colors.green,
-      'Orta Segment' => Colors.orange,
-      _ => Colors.pink,
+    final normalized = segment.toLowerCase();
+
+    if (normalized.contains('premium')) {
+      return const Color(0xFF7C3AED);
+    }
+
+    if (normalized.contains('ekonomik') || normalized.contains('budget')) {
+      return const Color(0xFF059669);
+    }
+
+    if (normalized.contains('orta') || normalized.contains('mid')) {
+      return const Color(0xFFF59E0B);
+    }
+
+    return const Color(0xFFDB2777);
+  }
+
+  String _rankLabel(int index) {
+    return switch (index) {
+      0 => _text(tr: 'En güçlü eşleşme', en: 'Best match'),
+      1 => _text(tr: 'İkinci seçenek', en: 'Second choice'),
+      _ => _text(tr: 'Üçüncü seçenek', en: 'Third choice'),
     };
   }
 
-  List<String> _storeNames(Map<String, dynamic> item) {
-    final value = item['stores'];
+  Future<void> _openStore(
+    BuildContext context,
+    String link,
+  ) async {
+    final uri = Uri.tryParse(link);
 
-    if (value is! List) {
-      return const [];
-    }
-
-    final stores = <String>[];
-
-    for (final rawStore in value) {
-      final store = rawStore.toString().trim().toLowerCase();
-
-      if (store.isEmpty || store == 'google' || stores.contains(store)) {
-        continue;
-      }
-
-      stores.add(store);
-    }
-
-    return stores;
-  }
-
-  Map<String, String> _storeLinks(Map<String, dynamic> item) {
-    final value = item['storeLinks'];
-
-    if (value is! Map) {
-      return const {};
-    }
-
-    return value.map(
-      (key, link) =>
-          MapEntry(key.toString().trim().toLowerCase(), link.toString().trim()),
-    );
-  }
-
-  String _storeTitle(String store) {
-    return switch (store) {
-      'trendyol' => 'Trendyol’da İncele',
-      'gratis' => 'Gratis’te İncele',
-      'watsons' => 'Watsons’ta İncele',
-      'sephora' => 'Sephora’da İncele',
-      'boyner' => 'Boyner’de İncele',
-      'amazon' => 'Amazon’da İncele',
-      'official' => 'Resmî Mağazada İncele',
-      _ => 'Mağazada İncele',
-    };
-  }
-
-  IconData _storeIcon(String store) {
-    return switch (store) {
-      'trendyol' => Icons.shopping_bag_outlined,
-      'gratis' => Icons.store_mall_directory_outlined,
-      'watsons' => Icons.shopping_cart_outlined,
-      'sephora' => Icons.diamond_outlined,
-      'boyner' => Icons.local_mall_outlined,
-      'amazon' => Icons.inventory_2_outlined,
-      'official' => Icons.verified_outlined,
-      _ => Icons.storefront_outlined,
-    };
-  }
-
-  String _storeSubtitle(String store, String? directLink) {
-    if (directLink != null && directLink.trim().isNotEmpty) {
-      return 'Doğrudan ürün sayfasını aç';
-    }
-
-    return switch (store) {
-      'trendyol' => 'Trendyol’da ürün adı ve renk koduyla ara',
-      'gratis' => 'Gratis sonuçlarında ürünü ara',
-      'watsons' => 'Watsons sonuçlarında ürünü ara',
-      'sephora' => 'Sephora sonuçlarında ürünü ara',
-      'boyner' => 'Boyner sonuçlarında ürünü ara',
-      'amazon' => 'Amazon Türkiye’de ürünü ara',
-      'official' => 'Markanın resmî satış sayfasını aç',
-      _ => 'Ürünü bu mağazada ara',
-    };
-  }
-
-  Future<void> _openStore({
-    required BuildContext sheetContext,
-    required BuildContext pageContext,
-    required String store,
-    required String brand,
-    required String product,
-    required String shade,
-    String? directLink,
-  }) async {
-    Navigator.pop(sheetContext);
-
-    final opened = await ProductLinkService.openStore(
-      store: store,
-      brand: brand,
-      product: product,
-      shade: shade,
-      directLink: directLink,
-    );
-
-    if (!pageContext.mounted || opened) {
+    if (uri == null) {
+      _showMessage(
+        context,
+        _text(tr: 'Mağaza bağlantısı geçersiz.', en: 'Invalid store link.'),
+      );
       return;
     }
 
-    ScaffoldMessenger.of(pageContext)
+    final opened = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!opened && context.mounted) {
+      _showMessage(
+        context,
+        _text(
+          tr: 'Mağaza bağlantısı açılamadı.',
+          en: 'The store link could not be opened.',
+        ),
+      );
+    }
+  }
+
+  void _showMessage(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text('${_storeTitle(store)} bağlantısı açılamadı.')),
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
   }
 
-  Future<void> _showProductStores({
-    required BuildContext context,
-    required Map<String, dynamic> item,
-    required String brand,
-    required String product,
-    required String shade,
-  }) async {
-    final stores = _storeNames(item);
-    final links = _storeLinks(item);
-
-    final title = [
-      brand,
-      product,
-      shade,
-    ].where((text) => text.trim().isNotEmpty).join(' ');
-
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.shopping_bag_outlined,
-                        color: Colors.deepPurple,
-                        size: 27,
-                      ),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Ürünü Nerede İncelemek İstersin?',
-                          style: TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.4,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  if (stores.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(13),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(13),
-                        border: Border.all(
-                          color: Colors.amber.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: const Text(
-                        'Bu ürün için doğrulanmış mağaza henüz eklenmedi. Google üzerinden farklı satıcıları arayabilirsin.',
-                        style: TextStyle(fontSize: 13, height: 1.35),
-                      ),
-                    ),
-                  for (final store in stores) ...[
-                    _storeButton(
-                      icon: _storeIcon(store),
-                      title: _storeTitle(store),
-                      subtitle: _storeSubtitle(store, links[store]),
-                      onTap: () {
-                        _openStore(
-                          sheetContext: sheetContext,
-                          pageContext: context,
-                          store: store,
-                          brand: brand,
-                          product: product,
-                          shade: shade,
-                          directLink: links[store],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  _storeButton(
-                    icon: Icons.search,
-                    title: 'Google’da Ara',
-                    subtitle: 'Diğer mağaza ve fiyat seçeneklerini gör',
-                    onTap: () {
-                      _openStore(
-                        sheetContext: sheetContext,
-                        pageContext: context,
-                        store: 'google',
-                        brand: brand,
-                        product: product,
-                        shade: shade,
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(sheetContext),
-                      child: const Text('Vazgeç'),
-                    ),
-                  ),
-                  Text(
-                    'Fiyat ve stok durumu mağazaya göre değişebilir. Satın almadan önce ürün adını ve renk kodunu kontrol et.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.35,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _storeButton({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.grey.shade50,
-      borderRadius: BorderRadius.circular(15),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(15),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.deepPurple.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(icon, color: Colors.deepPurple),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.open_in_new, size: 20, color: Colors.deepPurple),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _recommendationText(String title, String key) {
-    final items = _recommendations(
-      key,
-      fallbackBrandKey: '${title}Brand',
-      fallbackCodeKey: '${title}Code',
-    );
-
+  String _recommendationCopyText(
+    String categoryTitle,
+    List<Map<String, dynamic>> recommendations,
+  ) {
     final buffer = StringBuffer();
+    buffer.writeln(categoryTitle.toUpperCase());
 
-    for (int index = 0; index < items.length; index++) {
-      final item = items[index];
-
-      final label = switch (index) {
-        0 => 'En Uygun',
-        1 => 'Alternatif 1',
-        _ => 'Alternatif 2',
-      };
-
-      buffer.writeln(label);
-
-      buffer.writeln('${item['brand'] ?? ''} — ${item['product'] ?? ''}');
-
-      buffer.writeln('Kod / Renk: ${item['shade'] ?? ''}');
-
-      buffer.writeln('Fiyat: ${_priceText(item)}');
-
-      buffer.writeln('Fiyat Kategorisi: ${_priceSegment(item, index)}');
-
+    for (int index = 0; index < recommendations.length; index++) {
+      final item = recommendations[index];
+      final brand = _recommendationValue(item, 'brand');
+      final product = _recommendationValue(item, 'product');
+      final shade = _recommendationValue(item, 'shade');
       final score = _matchScore(item);
+      final reason = _recommendationValue(item, 'matchReason');
+
+      buffer.writeln('${index + 1}. $brand${product.isEmpty ? '' : ' - $product'}');
+      buffer.writeln(
+        '${_text(tr: 'Kod / Renk', en: 'Shade')}: $shade',
+      );
 
       if (score > 0) {
-        buffer.writeln('Uyum: %$score');
+        buffer.writeln('${_text(tr: 'Uyum', en: 'Match')}: %$score');
       }
 
-      buffer.writeln(
-        'Öneri nedeni: ${_itemValue(item, 'matchReason', fallback: 'Genel ürün özelliklerine göre önerildi')}',
-      );
+      if (reason.isNotEmpty) {
+        buffer.writeln('${_text(tr: 'Neden', en: 'Why')}: $reason');
+      }
 
       buffer.writeln();
     }
@@ -511,46 +278,47 @@ class ResultScreen extends StatelessWidget {
   }
 
   String _buildCopyText() {
+    final foundations = _recommendations(
+      'foundationRecommendations',
+      fallbackBrandKey: 'foundationBrand',
+      fallbackCodeKey: 'foundationCode',
+    );
+
+    final concealers = _recommendations(
+      'concealerRecommendations',
+      fallbackBrandKey: 'concealerBrand',
+      fallbackCodeKey: 'concealerCode',
+    );
+
+    final blushes = _recommendations(
+      'blushRecommendations',
+      fallbackBrandKey: 'blushBrand',
+      fallbackCodeKey: 'blushCode',
+    );
+
+    final lipsticks = _recommendations(
+      'lipstickRecommendations',
+      fallbackBrandKey: 'lipstickBrand',
+      fallbackCodeKey: 'lipstickCode',
+    );
+
     return '''
-GlowMatch AI Analizi
+GlowMatch AI
 
-Cilt Tonu:
-${_value('skinTone')}
+${_text(tr: 'Cilt Tonu', en: 'Skin Tone')}: ${_value('skinTone')}
+${_text(tr: 'Alt Ton', en: 'Undertone')}: ${_value('undertone')}
+${_text(tr: 'Cilt Tipi', en: 'Skin Type')}: ${_value('skinType')}
+${_text(tr: 'Yüz Şekli', en: 'Face Shape')}: ${_value('faceShape')}
+${_text(tr: 'Göz Rengi', en: 'Eye Color')}: ${_value('eyeColor')}
+${_text(tr: 'Mevcut Saç Rengi', en: 'Current Hair Color')}: ${_value('hairColor')}
 
-Alt Ton:
-${_value('undertone')}
+${_recommendationCopyText(_text(tr: 'Fondöten', en: 'Foundation'), foundations)}
+${_recommendationCopyText(_text(tr: 'Kapatıcı', en: 'Concealer'), concealers)}
+${_recommendationCopyText(_text(tr: 'Allık', en: 'Blush'), blushes)}
+${_recommendationCopyText(_text(tr: 'Ruj', en: 'Lipstick'), lipsticks)}
+${_text(tr: 'Saç Modeli', en: 'Hairstyle')}: ${_value('hairStyle')}
+${_text(tr: 'Saç Rengi Önerisi', en: 'Hair Color Suggestion')}: ${_value('hairColorSuggestion')}
 
-Cilt Tipi:
-${_value('skinType')}
-
-Yüz Şekli:
-${_value('faceShape')}
-
-Göz Rengi:
-${_value('eyeColor')}
-
-Mevcut Saç Rengi:
-${_value('hairColor')}
-
-FONDÖTEN
-${_recommendationText('foundation', 'foundationRecommendations')}
-
-KAPATICI
-${_recommendationText('concealer', 'concealerRecommendations')}
-
-ALLIK
-${_recommendationText('blush', 'blushRecommendations')}
-
-RUJ
-${_recommendationText('lipstick', 'lipstickRecommendations')}
-
-Saç Modeli Önerisi:
-${_value('hairStyle')}
-
-Saç Rengi Önerisi:
-${_value('hairColorSuggestion')}
-
-Not:
 ${_value('disclaimer')}
 ''';
   }
@@ -562,419 +330,558 @@ ${_value('disclaimer')}
       return;
     }
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(content: Text('Analiz panoya kopyalandı.')),
-      );
-  }
-
-  Future<void> _selectAllAnalysis(BuildContext context) async {
-    final controller = TextEditingController(text: _buildCopyText());
-
-    controller.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: controller.text.length,
-    );
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Tüm Analiz'),
-          content: SizedBox(
-            width: 600,
-            height: 450,
-            child: TextField(
-              controller: controller,
-              readOnly: true,
-              autofocus: true,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.all(16),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Kapat'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: controller.text));
-
-                if (!dialogContext.mounted) {
-                  return;
-                }
-
-                Navigator.pop(dialogContext);
-              },
-              icon: const Icon(Icons.copy),
-              label: const Text('Kopyala'),
-            ),
-          ],
-        );
-      },
-    );
-
-    controller.dispose();
-  }
-
-  Widget _infoCard({
-    required IconData icon,
-    required String title,
-    required String value,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: Icon(icon, color: Colors.deepPurple),
-        title: SelectableText(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: SelectableText(
-            value,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-        ),
+    _showMessage(
+      context,
+      _text(
+        tr: 'Analiz panoya kopyalandı.',
+        en: 'Analysis copied to clipboard.',
       ),
     );
   }
 
-  Widget _analysisDetails() {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        leading: const Icon(
-          Icons.face_retouching_natural,
-          color: Colors.deepPurple,
-        ),
-        title: const Text(
-          'Yüz Analizi Detayları',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-        ),
-        subtitle: const Text(
-          'Cilt tonu, alt ton ve diğer analizleri görüntüle',
-        ),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        children: [
-          _infoCard(
-            icon: Icons.face,
-            title: 'Cilt Tonu',
-            value: _value('skinTone'),
-          ),
-          _infoCard(
-            icon: Icons.wb_sunny_outlined,
-            title: 'Alt Ton',
-            value: _value('undertone'),
-          ),
-          _infoCard(
-            icon: Icons.water_drop_outlined,
-            title: 'Cilt Tipi',
-            value: _value('skinType'),
-          ),
-          _infoCard(
-            icon: Icons.crop_square,
-            title: 'Yüz Şekli',
-            value: _value('faceShape'),
-          ),
-          _infoCard(
-            icon: Icons.remove_red_eye_outlined,
-            title: 'Göz Rengi',
-            value: _value('eyeColor'),
-          ),
-          _infoCard(
-            icon: Icons.content_cut,
-            title: 'Mevcut Saç Rengi',
-            value: _value('hairColor'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _featureChip({required IconData icon, required String label}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: Colors.deepPurple),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _scoreBadge(int score) {
-    if (score <= 0) {
-      return const SizedBox.shrink();
-    }
-
-    final color = _matchScoreColor(score);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome, size: 16, color: color),
-          const SizedBox(width: 5),
-          Text(
-            '%$score Uyumlu',
-            style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _reasonBox(List<String> reasons) {
-    if (reasons.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
+  Widget _buildHero() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: Colors.deepPurple.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: Colors.deepPurple.withValues(alpha: 0.15)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDarkMode
+              ? const [
+                  Color(0xFF2A1547),
+                  Color(0xFF17101F),
+                  Color(0xFF30122E),
+                ]
+              : const [
+                  Color(0xFFF3E8FF),
+                  Color(0xFFFFF1F7),
+                  Color(0xFFEDE9FE),
+                ],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: _borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.lightbulb_outline, size: 20, color: Colors.deepPurple),
-              SizedBox(width: 7),
-              Text(
-                'Neden önerildi?',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.deepPurple,
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7C3AED), Color(0xFFDB2777)],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(
+                        tr: 'Analizin hazır',
+                        en: 'Your analysis is ready',
+                      ),
+                      style: TextStyle(
+                        color: _primaryTextColor,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _text(
+                        tr: 'Tonuna göre seçilen ürünler aşağıda.',
+                        en: 'Products selected for your tone are below.',
+                      ),
+                      style: TextStyle(
+                        color: _secondaryTextColor,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 9),
-          for (int index = 0; index < reasons.length; index++) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 2),
-                  child: Icon(
-                    Icons.check_circle_outline,
-                    size: 17,
-                    color: Colors.green,
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: SelectableText(
-                    reasons[index],
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.35,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (index != reasons.length - 1) const SizedBox(height: 7),
-          ],
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _summaryChip(
+                icon: Icons.face_outlined,
+                label: _text(tr: 'Cilt', en: 'Skin'),
+                value: _value('skinTone'),
+              ),
+              _summaryChip(
+                icon: Icons.wb_sunny_outlined,
+                label: _text(tr: 'Alt ton', en: 'Undertone'),
+                value: _value('undertone'),
+              ),
+              _summaryChip(
+                icon: Icons.water_drop_outlined,
+                label: _text(tr: 'Cilt tipi', en: 'Skin type'),
+                value: _value('skinType'),
+              ),
+              _summaryChip(
+                icon: Icons.crop_free,
+                label: _text(tr: 'Yüz', en: 'Face'),
+                value: _value('faceShape'),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _recommendationItem({
-    required BuildContext context,
-    required int index,
-    required Map<String, dynamic> item,
+  Widget _summaryChip({
+    required IconData icon,
+    required String label,
+    required String value,
   }) {
-    final medal = switch (index) {
-      0 => '🥇',
-      1 => '🥈',
-      _ => '🥉',
-    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 11,
+        vertical: 9,
+      ),
+      decoration: BoxDecoration(
+        color: isDarkMode
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.80),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _borderColor),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            color: const Color(0xFF7C3AED),
+            size: 17,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: '$label: ',
+                    style: TextStyle(
+                      color: _secondaryTextColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: value,
+                    style: TextStyle(
+                      color: _primaryTextColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              softWrap: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    final brand = _itemValue(item, 'brand', fallback: 'Marka belirtilmedi');
+  Widget _sectionHeading({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 8, 2, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFF7C3AED).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(icon, color: const Color(0xFF7C3AED), size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: _primaryTextColor,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: _secondaryTextColor,
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    final product = _itemValue(item, 'product');
+  Widget _buildRecommendationSection(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required String recommendationsKey,
+    required String fallbackBrandKey,
+    required String fallbackCodeKey,
+  }) {
+    final recommendations = _recommendations(
+      recommendationsKey,
+      fallbackBrandKey: fallbackBrandKey,
+      fallbackCodeKey: fallbackCodeKey,
+    );
 
-    final shade = _itemValue(item, 'shade', fallback: 'Renk belirtilmedi');
+    if (recommendations.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-    final finish = _itemValue(item, 'finish');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeading(
+          icon: icon,
+          title: title,
+          subtitle: _text(
+            tr: 'Uyum puanı, ürün özellikleri ve satış bağlantıları.',
+            en: 'Match score, product details and store links.',
+          ),
+        ),
+        for (int index = 0; index < recommendations.length; index++) ...[
+          _buildRecommendationCard(
+            context,
+            index: index,
+            recommendation: recommendations[index],
+          ),
+          const SizedBox(height: 12),
+        ],
+        const SizedBox(height: 12),
+      ],
+    );
+  }
 
-    final coverage = _itemValue(item, 'coverage');
+  Widget _buildAffordableFoundationSection(BuildContext context) {
+    final value = result['affordableFoundationAlternatives'];
 
-    final shadeFamily = _itemValue(item, 'shadeFamily');
+    if (value is! List || value.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-    final vegan = _itemBool(item, 'vegan');
+    final alternatives = value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
 
-    final crueltyFree = _itemBool(item, 'crueltyFree');
+    if (alternatives.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-    final score = _matchScore(item);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeading(
+          icon: Icons.savings_outlined,
+          title: _text(
+            tr: 'Daha uygun fondötenler',
+            en: 'More affordable foundations',
+          ),
+          subtitle: _text(
+            tr: 'Ana öneriye yakın tonda, daha hesaplı seçenekler.',
+            en: 'Lower-priced options close to the main recommendation.',
+          ),
+        ),
+        for (int index = 0; index < alternatives.length; index++) ...[
+          _buildRecommendationCard(
+            context,
+            index: index,
+            recommendation: alternatives[index],
+            affordable: true,
+          ),
+          const SizedBox(height: 12),
+        ],
+        const SizedBox(height: 12),
+      ],
+    );
+  }
 
-    final reasons = _matchReasons(item);
+  Widget _buildRecommendationCard(
+    BuildContext context, {
+    required int index,
+    required Map<String, dynamic> recommendation,
+    bool affordable = false,
+  }) {
+    final brand = _recommendationValue(
+      recommendation,
+      'brand',
+      fallback: _text(tr: 'Marka belirtilmedi', en: 'Brand unavailable'),
+    );
 
-    final segment = _priceSegment(item, index);
+    final product = _recommendationValue(recommendation, 'product');
+    final shade = _recommendationValue(
+      recommendation,
+      'shade',
+      fallback: _text(tr: 'Renk belirtilmedi', en: 'Shade unavailable'),
+    );
+    final finish = _recommendationValue(recommendation, 'finish');
+    final coverage = _recommendationValue(recommendation, 'coverage');
+    final matchReason = _recommendationValue(recommendation, 'matchReason');
+    final score = _matchScore(recommendation);
+    final vegan = _recommendationBool(recommendation, 'vegan');
+    final crueltyFree = _recommendationBool(recommendation, 'crueltyFree');
+    final storeLinks = _storeLinks(recommendation);
+    final segment = affordable
+        ? _text(tr: 'Uygun Alternatif', en: 'Budget Alternative')
+        : _priceSegmentText(recommendation, index);
+    final accent = affordable ? const Color(0xFF059669) : _segmentColor(segment);
 
-    final segmentColor = _segmentColor(segment);
-
-    final skinTypesValue = item['skinTypes'];
-
+    final skinTypesValue = recommendation['skinTypes'];
     final skinTypes = skinTypesValue is List
         ? skinTypesValue
-              .map((value) => value.toString().trim())
-              .where((value) => value.isNotEmpty)
-              .join(', ')
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .join(', ')
         : '';
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
-        color: segmentColor.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: segmentColor.withValues(alpha: 0.25)),
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDarkMode ? 0.18 : 0.045),
+            blurRadius: 22,
+            offset: const Offset(0, 9),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  color: segmentColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
+                  color: accent.withValues(alpha: 0.11),
+                  borderRadius: BorderRadius.circular(15),
                 ),
+                alignment: Alignment.center,
                 child: Text(
-                  '$medal $segment',
+                  '${index + 1}',
                   style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: segmentColor,
+                    color: accent,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
-              _scoreBadge(score),
-            ],
-          ),
-          const SizedBox(height: 13),
-          SelectableText(
-            brand,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          if (product.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            SelectableText(
-              product,
-              style: TextStyle(
-                fontSize: 15,
-                color: Colors.grey.shade800,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const SizedBox(height: 11),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                Row(
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.colorize, size: 20, color: Colors.pink),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: SelectableText(
-                        'Kod / Renk: $shade',
-                        style: const TextStyle(
-                          fontSize: 15,
+                    Text(
+                      _rankLabel(index),
+                      style: TextStyle(
+                        color: accent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      brand,
+                      style: TextStyle(
+                        color: _primaryTextColor,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (product.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        product,
+                        style: TextStyle(
+                          color: _secondaryTextColor,
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 10),
-                Divider(height: 1, color: Colors.grey.shade200),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.payments_outlined,
-                      size: 20,
-                      color: segmentColor,
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  segment,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: isDarkMode ? 0.10 : 0.055),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: accent.withValues(alpha: 0.18)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.colorize, color: accent, size: 20),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    '${_text(tr: 'Kod / Renk', en: 'Shade')}: $shade',
+                    style: TextStyle(
+                      color: _primaryTextColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: SelectableText(
-                        _priceText(item),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: segmentColor,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
+                ),
+                Text(
+                  _priceText(recommendation),
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ],
             ),
           ),
-          if (shadeFamily.isNotEmpty) ...[
+          if (score > 0) ...[
+            const SizedBox(height: 15),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _text(tr: 'GlowMatch uyumu', en: 'GlowMatch score'),
+                    style: TextStyle(
+                      color: _primaryTextColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Text(
+                  '%$score',
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
-            SelectableText(
-              'Renk ailesi: $shadeFamily',
-              style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: score / 100,
+                minHeight: 8,
+                backgroundColor: accent.withValues(alpha: 0.10),
+                valueColor: AlwaysStoppedAnimation<Color>(accent),
+              ),
+            ),
+          ],
+          if (matchReason.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: isDarkMode
+                    ? Colors.white.withValues(alpha: 0.035)
+                    : const Color(0xFFFAF8FC),
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: _borderColor),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    color: accent,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      matchReason,
+                      style: TextStyle(
+                        color: _secondaryTextColor,
+                        fontSize: 13,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
           if (finish.isNotEmpty ||
@@ -984,18 +891,19 @@ ${_value('disclaimer')}
               crueltyFree) ...[
             const SizedBox(height: 13),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 7,
+              runSpacing: 7,
               children: [
                 if (finish.isNotEmpty)
                   _featureChip(
                     icon: Icons.auto_awesome,
-                    label: 'Bitiş: $finish',
+                    label: '${_text(tr: 'Bitiş', en: 'Finish')}: $finish',
                   ),
                 if (coverage.isNotEmpty)
                   _featureChip(
                     icon: Icons.layers_outlined,
-                    label: 'Kapatıcılık: $coverage',
+                    label:
+                        '${_text(tr: 'Kapatıcılık', en: 'Coverage')}: $coverage',
                   ),
                 if (skinTypes.isNotEmpty)
                   _featureChip(
@@ -1003,45 +911,82 @@ ${_value('disclaimer')}
                     label: skinTypes,
                   ),
                 if (vegan)
-                  _featureChip(icon: Icons.eco_outlined, label: 'Vegan'),
+                  _featureChip(
+                    icon: Icons.eco_outlined,
+                    label: _text(tr: 'Vegan', en: 'Vegan'),
+                  ),
                 if (crueltyFree)
                   _featureChip(
                     icon: Icons.pets_outlined,
-                    label: 'Cruelty Free',
+                    label: _text(tr: 'Hayvan dostu', en: 'Cruelty free'),
                   ),
               ],
             ),
           ],
-          if (reasons.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            _reasonBox(reasons),
+          if (storeLinks.isNotEmpty) ...[
+            const SizedBox(height: 15),
+            Text(
+              _text(tr: 'Mağazada görüntüle', en: 'View in store'),
+              style: TextStyle(
+                color: _primaryTextColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 9),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final entry in storeLinks.entries)
+                  OutlinedButton.icon(
+                    onPressed: () => _openStore(context, entry.value),
+                    icon: const Icon(Icons.open_in_new, size: 17),
+                    label: Text(entry.key),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: accent,
+                      side: BorderSide(color: accent.withValues(alpha: 0.35)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 11,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ],
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            height: 49,
-            child: FilledButton.icon(
-              onPressed: () {
-                _showProductStores(
-                  context: context,
-                  item: item,
-                  brand: brand,
-                  product: product,
-                  shade: shade,
-                );
-              },
-              icon: const Icon(Icons.shopping_bag_outlined),
-              label: const Text(
-                'Ürünü İncele',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.deepPurple,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _featureChip({
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: isDarkMode
+            ? Colors.white.withValues(alpha: 0.045)
+            : const Color(0xFFF8F5FA),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: _borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: const Color(0xFF7C3AED), size: 15),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: _secondaryTextColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -1049,106 +994,120 @@ ${_value('disclaimer')}
     );
   }
 
-  Widget _recommendationSection({
-    required BuildContext context,
-    required String title,
-    required IconData icon,
-    required String recommendationsKey,
-    required String fallbackBrandKey,
-    required String fallbackCodeKey,
-  }) {
-    final items = _recommendations(
-      recommendationsKey,
-      fallbackBrandKey: fallbackBrandKey,
-      fallbackCodeKey: fallbackCodeKey,
-    );
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: Colors.pink, size: 28),
-                const SizedBox(width: 10),
-                SelectableText(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            for (int index = 0; index < items.length; index++) ...[
-              _recommendationItem(
-                context: context,
-                index: index,
-                item: items[index],
-              ),
-              if (index != items.length - 1) const SizedBox(height: 14),
-            ],
-          ],
+  Widget _buildHairSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeading(
+          icon: Icons.content_cut,
+          title: _text(tr: 'Saç önerileri', en: 'Hair suggestions'),
         ),
-      ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(17),
+          decoration: BoxDecoration(
+            color: _cardColor,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: _borderColor),
+          ),
+          child: Column(
+            children: [
+              _hairRow(
+                icon: Icons.face_retouching_natural,
+                title: _text(tr: 'Saç modeli', en: 'Hairstyle'),
+                value: _value('hairStyle'),
+              ),
+              Divider(height: 27, color: _borderColor),
+              _hairRow(
+                icon: Icons.color_lens_outlined,
+                title: _text(tr: 'Saç rengi', en: 'Hair color'),
+                value: _value('hairColorSuggestion'),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _affordableFoundationSection(BuildContext context) {
-    final value = result['affordableFoundationAlternatives'];
-
-    if (value is! List || value.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final items = value
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-
-    if (items.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.savings_outlined, color: Colors.green, size: 28),
-                SizedBox(width: 10),
-                Expanded(
-                  child: SelectableText(
-                    'Aynı Tonda Daha Uygun Alternatifler',
-                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Ana fondöten önerisine yakın, daha ekonomik seçenekler.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 14),
-            for (int index = 0; index < items.length; index++) ...[
-              _recommendationItem(
-                context: context,
-                index: index,
-                item: items[index],
-              ),
-              if (index != items.length - 1) const SizedBox(height: 14),
-            ],
-          ],
+  Widget _hairRow({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: const Color(0xFFDB2777).withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(icon, color: const Color(0xFFDB2777), size: 21),
         ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: _secondaryTextColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  color: _primaryTextColor,
+                  fontSize: 15,
+                  height: 1.4,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDisclaimer() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFF59E0B).withValues(alpha: 0.22),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline,
+            color: Color(0xFFF59E0B),
+            size: 21,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _value('disclaimer'),
+              style: TextStyle(
+                color: _secondaryTextColor,
+                fontSize: 12,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1156,194 +1115,113 @@ ${_value('disclaimer')}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8FC),
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF8F8FC),
+        backgroundColor: _backgroundColor,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        centerTitle: false,
-        titleSpacing: 4,
         leading: IconButton(
-          onPressed: () {
-            Navigator.pop(context);
-          },
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 21),
-          tooltip: 'Geri',
+          onPressed: () => Navigator.pop(context),
+          icon: Icon(Icons.arrow_back_ios_new, color: _primaryTextColor),
         ),
-        title: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.auto_awesome, color: Color(0xFF7C3AED), size: 22),
-            SizedBox(width: 8),
-            Text(
-              'GlowMatch',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.3,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(right: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: const Color(0xFF22C55E).withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(
-                  color: const Color(0xFF22C55E).withValues(alpha: 0.20),
-                ),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.check_circle_outline,
-                    size: 17,
-                    color: Color(0xFF16A34A),
-                  ),
-                  SizedBox(width: 5),
-                  Text(
-                    'Tamamlandı',
-                    style: TextStyle(
-                      color: Color(0xFF15803D),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        title: Text(
+          _text(tr: 'Analiz Sonucu', en: 'Analysis Result'),
+          style: TextStyle(
+            color: _primaryTextColor,
+            fontWeight: FontWeight.w900,
           ),
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: _text(tr: 'Analizi kopyala', en: 'Copy analysis'),
+            onPressed: () => _copyAnalysis(context),
+            icon: Icon(Icons.copy_all_outlined, color: _primaryTextColor),
+          ),
+          const SizedBox(width: 5),
         ],
       ),
       body: SelectionArea(
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 30),
           children: [
-            const Icon(Icons.auto_awesome, size: 80, color: Colors.deepPurple),
-            const SizedBox(height: 15),
-            const SelectableText(
-              'GlowMatch AI Sonucu',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 27, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Yüz analizine göre kişiselleştirilmiş ürün önerilerin hazır.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 24),
-            _analysisDetails(),
-            const SelectableText(
-              'Önerilen Makyaj Ürünleri',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 15),
-            _recommendationSection(
-              context: context,
-              title: 'Fondöten',
-              icon: Icons.brush,
+            _buildHero(),
+            const SizedBox(height: 28),
+            _buildRecommendationSection(
+              context,
+              title: _text(tr: 'Fondöten', en: 'Foundation'),
+              icon: Icons.brush_outlined,
               recommendationsKey: 'foundationRecommendations',
               fallbackBrandKey: 'foundationBrand',
               fallbackCodeKey: 'foundationCode',
             ),
-            _affordableFoundationSection(context),
-            _recommendationSection(
-              context: context,
-              title: 'Kapatıcı',
-              icon: Icons.opacity,
+            _buildAffordableFoundationSection(context),
+            _buildRecommendationSection(
+              context,
+              title: _text(tr: 'Kapatıcı', en: 'Concealer'),
+              icon: Icons.opacity_outlined,
               recommendationsKey: 'concealerRecommendations',
               fallbackBrandKey: 'concealerBrand',
               fallbackCodeKey: 'concealerCode',
             ),
-            _recommendationSection(
-              context: context,
-              title: 'Allık',
+            _buildRecommendationSection(
+              context,
+              title: _text(tr: 'Allık', en: 'Blush'),
               icon: Icons.palette_outlined,
               recommendationsKey: 'blushRecommendations',
               fallbackBrandKey: 'blushBrand',
               fallbackCodeKey: 'blushCode',
             ),
-            _recommendationSection(
-              context: context,
-              title: 'Ruj',
+            _buildRecommendationSection(
+              context,
+              title: _text(tr: 'Ruj', en: 'Lipstick'),
               icon: Icons.favorite_outline,
               recommendationsKey: 'lipstickRecommendations',
               fallbackBrandKey: 'lipstickBrand',
               fallbackCodeKey: 'lipstickCode',
             ),
-            const SizedBox(height: 10),
-            const SelectableText(
-              'Saç Önerileri',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 15),
-            _infoCard(
-              icon: Icons.face_retouching_natural,
-              title: 'Saç Modeli',
-              value: _value('hairStyle'),
-            ),
-            _infoCard(
-              icon: Icons.color_lens_outlined,
-              title: 'Saç Rengi Önerisi',
-              value: _value('hairColorSuggestion'),
-            ),
-            const SizedBox(height: 15),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.grey.shade600),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: SelectableText(
-                        _value('disclaimer'),
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 52,
-              child: OutlinedButton.icon(
-                onPressed: () => _selectAllAnalysis(context),
-                icon: const Icon(Icons.select_all),
-                label: const Text('Tümünü Seç'),
-              ),
-            ),
-            const SizedBox(height: 12),
+            _buildHairSection(),
+            const SizedBox(height: 18),
+            _buildDisclaimer(),
+            const SizedBox(height: 18),
             SizedBox(
               height: 52,
               child: FilledButton.icon(
                 onPressed: () => _copyAnalysis(context),
                 icon: const Icon(Icons.copy_all_outlined),
-                label: const Text('Analizi Kopyala'),
+                label: Text(
+                  _text(tr: 'Analizi Kopyala', en: 'Copy Analysis'),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF7C3AED),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 11),
             SizedBox(
               height: 52,
               child: OutlinedButton.icon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.refresh),
-                label: const Text('Yeni Analiz Yap'),
+                label: Text(
+                  _text(tr: 'Yeni Analiz Yap', en: 'Start New Analysis'),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF7C3AED),
+                  side: BorderSide(
+                    color: const Color(0xFF7C3AED).withValues(alpha: 0.32),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 20),
           ],
         ),
       ),

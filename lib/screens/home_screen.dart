@@ -12,23 +12,61 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
   final ImageService _imageService = ImageService();
   final AIService _aiService = AIService();
 
-  XFile? _selectedImage;
+  
   bool _isLoading = false;
   bool _isDarkMode = false;
+
+  late final AnimationController _starController;
 
   String _selectedLanguage = 'tr';
   int _selectedTab = 0;
 
   bool get _isTurkish => _selectedLanguage == 'tr';
 
+  @override
+  void initState() {
+    super.initState();
+    debugPrint('GLOWMATCH_STAR_LOADER_V3_ACTIVE');
+    _starController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    );
+  }
+
+  @override
+  void dispose() {
+    _starController.dispose();
+    super.dispose();
+  }
+
+  void _setLoading(bool value) {
+    if (!mounted || _isLoading == value) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = value;
+    });
+
+    if (value) {
+      _starController.repeat();
+    } else {
+      _starController
+        ..stop()
+        ..reset();
+    }
+  }
+
   Color get _backgroundColor =>
       _isDarkMode ? const Color(0xFF08070D) : const Color(0xFFFFF8FC);
 
-  Color get _cardColor => _isDarkMode ? const Color(0xFF17131F) : Colors.white;
+  Color get _cardColor =>
+      _isDarkMode ? const Color(0xFF17131F) : Colors.white;
 
   Color get _primaryTextColor =>
       _isDarkMode ? const Color(0xFFF9F6FF) : const Color(0xFF21143D);
@@ -44,38 +82,60 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pickFromCamera() async {
-    final image = await _imageService.pickFromCamera();
-    await _setSelectedImageAndAnalyze(image);
+    await _pickImageAndAnalyze(_imageService.pickFromCamera);
   }
 
   Future<void> _pickFromGallery() async {
-    final image = await _imageService.pickFromGallery();
-    await _setSelectedImageAndAnalyze(image);
+    await _pickImageAndAnalyze(_imageService.pickFromGallery);
   }
 
-  Future<void> _setSelectedImageAndAnalyze(XFile? image) async {
-    if (image == null || _isLoading) {
-      return;
+  Future<void> _pickImageAndAnalyze(
+    Future<XFile?> Function() picker,
+  ) async {
+    if (!_isLoading) {
+      _setLoading(true);
     }
 
-    setState(() {
-      _selectedImage = image;
-    });
+    // İlk animasyon karesinin ekrana çizilmesine fırsat verir.
+    await Future<void>.delayed(const Duration(milliseconds: 120));
 
-    await _analyzeImage();
+    try {
+      final image = await picker();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (image == null) {
+        _setLoading(false);
+        return;
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await _analyzeSelectedImage(image);
+    } on AIServiceException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      _setLoading(false);
+      _showMessage(error.message);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      _setLoading(false);
+      _showMessage(
+        _text(
+          tr: 'Beklenmeyen hata oluştu: $error',
+          en: 'An unexpected error occurred: $error',
+        ),
+      );
+    }
   }
 
-  Future<void> _analyzeImage() async {
-    final image = _selectedImage;
-
-    if (image == null || _isLoading) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
+  Future<void> _analyzeSelectedImage(XFile image) async {
     try {
       final result = await _aiService.analyzeFace(image);
 
@@ -83,37 +143,41 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
+      _setLoading(false);
+
       await Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => ResultScreen(result: result)),
+        MaterialPageRoute(
+          builder: (_) => ResultScreen(
+            result: result,
+            isDarkMode: _isDarkMode,
+            language: _selectedLanguage,
+          ),
+        ),
       );
     } on AIServiceException catch (error) {
       if (!mounted) {
         return;
       }
 
+      _setLoading(false);
       _showMessage(error.message);
     } catch (error) {
       if (!mounted) {
         return;
       }
 
+      _setLoading(false);
       _showMessage(
         _text(
           tr: 'Beklenmeyen hata oluştu: $error',
           en: 'An unexpected error occurred: $error',
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
-  void _showMessage(String message) {
+void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -591,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Divider(height: 1, indent: 69, color: _borderColor);
   }
 
-  Widget _buildSettingsButton() {
+Widget _buildSettingsButton() {
     return Material(
       color: _isDarkMode ? Colors.white.withValues(alpha: 0.07) : Colors.white,
       borderRadius: BorderRadius.circular(14),
@@ -616,7 +680,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _showPhotoSourceSheet() async {
-    await showModalBottomSheet<void>(
+    if (_isLoading) {
+      return;
+    }
+
+    // Karta dokunulduğu anda ok yıldız animasyonuna dönüşür.
+    _setLoading(true);
+    await Future<void>.delayed(const Duration(milliseconds: 90));
+
+    if (!mounted) {
+      return;
+    }
+
+    final source = await showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.48),
@@ -661,8 +737,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         icon: Icons.camera_alt_outlined,
                         title: _text(tr: 'Kamera', en: 'Camera'),
                         onTap: () {
-                          Navigator.pop(sheetContext);
-                          _pickFromCamera();
+                          Navigator.pop(sheetContext, ImageSource.camera);
                         },
                       ),
                     ),
@@ -672,8 +747,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         icon: Icons.photo_library_outlined,
                         title: _text(tr: 'Galeri', en: 'Gallery'),
                         onTap: () {
-                          Navigator.pop(sheetContext);
-                          _pickFromGallery();
+                          Navigator.pop(sheetContext, ImageSource.gallery);
                         },
                       ),
                     ),
@@ -685,6 +759,24 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (source == null) {
+      _setLoading(false);
+      return;
+    }
+
+    // Alt sayfanın kapanıp yıldızın görünmesini sağlar.
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+
+    if (source == ImageSource.camera) {
+      await _pickFromCamera();
+    } else {
+      await _pickFromGallery();
+    }
   }
 
   Widget _sourceButton({
@@ -842,9 +934,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           offset: const Offset(13, 18),
                         ),
                         BoxShadow(
-                          color: const Color(
-                            0xFFD946EF,
-                          ).withValues(alpha: _isDarkMode ? 0.42 : 0.27),
+                          color: const Color(0xFFD946EF).withValues(
+                            alpha: _isDarkMode ? 0.42 : 0.27,
+                          ),
                           blurRadius: 36,
                           spreadRadius: 2,
                           offset: const Offset(-8, -7),
@@ -887,13 +979,27 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         _premiumActionCard(
           icon: Icons.camera_alt_outlined,
-          title: _text(tr: 'Cildimi Analiz Et', en: 'Analyze My Skin'),
-          subtitle: _text(
-            tr: 'Fotoğraftan sana özel\ntonları keşfet',
-            en: 'Discover tones made for you\nfrom a photo',
-          ),
+          title: _isLoading
+              ? _text(
+                  tr: 'Cildin analiz ediliyor',
+                  en: 'Analyzing your skin',
+                )
+              : _text(
+                  tr: 'Cildimi Analiz Et',
+                  en: 'Analyze My Skin',
+                ),
+          subtitle: _isLoading
+              ? _text(
+                  tr: 'Tonların hazırlanıyor, lütfen bekle',
+                  en: 'Preparing your tones, please wait',
+                )
+              : _text(
+                  tr: 'Fotoğraftan sana özel\ntonları keşfet',
+                  en: 'Discover tones made for you\nfrom a photo',
+                ),
           onTap: _showPhotoSourceSheet,
           accent: const Color(0xFF7C3AED),
+          isLoading: _isLoading,
         ),
         const SizedBox(height: 12),
         _premiumActionCard(
@@ -916,7 +1022,10 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 12),
         _premiumActionCard(
           icon: Icons.folder_special_outlined,
-          title: _text(tr: 'Kayıtlı Görünümlerim', en: 'Saved Looks'),
+          title: _text(
+            tr: 'Kayıtlı Görünümlerim',
+            en: 'Saved Looks',
+          ),
           subtitle: _text(
             tr: 'Geçmiş analizlerini ve\nfavorilerini incele',
             en: 'Review previous analyses\nand favorites',
@@ -941,6 +1050,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required String subtitle,
     required VoidCallback onTap,
     required Color accent,
+    bool isLoading = false,
   }) {
     final cardColor = _isDarkMode
         ? const Color(0xFF17131F).withValues(alpha: 0.96)
@@ -949,7 +1059,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: isLoading ? null : onTap,
         borderRadius: BorderRadius.circular(22),
         child: Ink(
           height: 104,
@@ -998,7 +1108,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       : const Color(0xFFF4EAFF),
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
-                    color: accent.withValues(alpha: _isDarkMode ? 0.58 : 0.22),
+                    color: accent.withValues(
+                      alpha: _isDarkMode ? 0.58 : 0.22,
+                    ),
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -1038,23 +1150,103 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.11),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: accent.withValues(alpha: 0.18)),
-                ),
-                child: Icon(
-                  Icons.chevron_right_rounded,
-                  color: accent,
-                  size: 25,
-                ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(
+                    scale: animation,
+                    child: FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    ),
+                  );
+                },
+                child: isLoading
+                    ? _buildStarOrbitLoader(accent)
+                    : Container(
+                        key: const ValueKey<String>('analysis-arrow'),
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.11),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: accent.withValues(alpha: 0.18),
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          color: accent,
+                          size: 25,
+                        ),
+                      ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildStarOrbitLoader(Color accent) {
+    return SizedBox(
+      key: const ValueKey<String>('analysis-star-loader'),
+      width: 42,
+      height: 42,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.11),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: accent.withValues(alpha: 0.26),
+              ),
+            ),
+          ),
+          Icon(
+            Icons.auto_awesome,
+            color: accent,
+            size: 17,
+          ),
+          RotationTransition(
+            turns: CurvedAnimation(
+              parent: _starController,
+              curve: Curves.linear,
+            ),
+            child: Stack(
+              children: [
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Icon(
+                    Icons.star_rounded,
+                    color: accent,
+                    size: 11,
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: Icon(
+                    Icons.auto_awesome,
+                    color: accent.withValues(alpha: 0.78),
+                    size: 10,
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Icon(
+                    Icons.star_rounded,
+                    color: accent.withValues(alpha: 0.58),
+                    size: 7,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1080,9 +1272,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(
-              0xFFEC4899,
-            ).withValues(alpha: _isDarkMode ? 0.16 : 0.09),
+            color: const Color(0xFFEC4899).withValues(
+              alpha: _isDarkMode ? 0.16 : 0.09,
+            ),
             blurRadius: 24,
             offset: const Offset(0, 11),
           ),
@@ -1127,7 +1319,10 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   _text(tr: 'Sana Özel Ton', en: 'Your Perfect Shade'),
-                  style: TextStyle(color: _secondaryTextColor, fontSize: 11.5),
+                  style: TextStyle(
+                    color: _secondaryTextColor,
+                    fontSize: 11.5,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1269,7 +1464,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: _isDarkMode ? 0.32 : 0.08),
+              color: Colors.black.withValues(
+                alpha: _isDarkMode ? 0.32 : 0.08,
+              ),
               blurRadius: 28,
               offset: const Offset(0, 10),
             ),
@@ -1334,14 +1531,18 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(
               selected ? selectedIcon : icon,
-              color: selected ? const Color(0xFFD946EF) : _secondaryTextColor,
+              color: selected
+                  ? const Color(0xFFD946EF)
+                  : _secondaryTextColor,
               size: 24,
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                color: selected ? const Color(0xFFD946EF) : _secondaryTextColor,
+                color: selected
+                    ? const Color(0xFFD946EF)
+                    : _secondaryTextColor,
                 fontSize: 10.5,
                 fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
               ),
@@ -1355,8 +1556,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final backgroundGradient = _isDarkMode
-        ? const [Color(0xFF06050A), Color(0xFF0D0913), Color(0xFF09070D)]
-        : const [Color(0xFFFFFBFD), Color(0xFFFFF5FB), Color(0xFFF8F1FF)];
+        ? const [
+            Color(0xFF06050A),
+            Color(0xFF0D0913),
+            Color(0xFF09070D),
+          ]
+        : const [
+            Color(0xFFFFFBFD),
+            Color(0xFFFFF5FB),
+            Color(0xFFF8F1FF),
+          ];
 
     return Scaffold(
       backgroundColor: _backgroundColor,
